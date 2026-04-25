@@ -56,17 +56,15 @@ router.post('/', async (req, res) => {
 
     if (!all.length) return res.json({ data: [], weights });
 
-    // sqrt global normalisation → 0-100
-    const vals  = all.map(r => r.raw_score);
-    const minV  = Math.min(...vals);
-    const maxV  = Math.max(...vals);
-    const range = maxV - minV || 1;
-
+    // Absolute sqrt normalisation against theoretical max of 100
+    // (each dimension is 0-100, weights sum to 1 → max raw = 100)
+    // This ensures the safest real country still gets a non-zero honest score
+    // rather than being pinned to 0 by relative min-max.
     const scored = all.map((row, i) => ({
       rank:      i + 1,
       country:   row.name,
       code:      row.code,
-      score:     (Math.sqrt((row.raw_score - minV) / range) * 100).toFixed(1),
+      score:     (Math.sqrt(row.raw_score / 100) * 100).toFixed(1),
       raw_score: Number(row.raw_score).toFixed(4),   // for client-side local normalization
       conflict:  Number(row.conflict).toFixed(1),
       disaster:  Number(row.disaster).toFixed(1),
