@@ -12,7 +12,13 @@
 const https    = require('https');
 const iso3to2  = require('../parsers/iso3to2');
 
-const RELIEFWEB_URL = 'https://api.reliefweb.int/v2/disasters?appname=global-safety-index';
+// appname must be pre-approved: https://apidoc.reliefweb.int/parameters#appname
+// Register via Google Form (~1 business day), then set RELIEFWEB_APPNAME in .env
+function getApiUrl() {
+  const appname = process.env.RELIEFWEB_APPNAME;
+  if (!appname) throw new Error('RELIEFWEB_APPNAME is not set in .env. Register at https://apidoc.reliefweb.int/parameters#appname');
+  return `https://api.reliefweb.int/v2/disasters?appname=${encodeURIComponent(appname)}`;
+}
 
 // Severity weight by disaster type name (lower-cased substring match)
 const TYPE_WEIGHTS = [
@@ -112,7 +118,7 @@ async function fetchPage(offset) {
     offset: offset,
   };
 
-  return postRequest(RELIEFWEB_URL, body);
+  return postRequest(getApiUrl(), body);
 }
 
 /**
