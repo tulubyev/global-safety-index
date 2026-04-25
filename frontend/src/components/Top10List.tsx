@@ -9,35 +9,34 @@ interface Props {
   onSelect: (code: string) => void;
 }
 
-/** Re-normalise a list of scores within the group → 0-100 */
-function localNorm(rows: any[], key = 'raw_score'): Map<string, number> {
-  const vals = rows.map(r => parseFloat(r[key]));
-  const min  = Math.min(...vals);
-  const max  = Math.max(...vals);
+/**
+ * Re-normalise scores within the displayed group → 0-100.
+ * Used only when global scores don't differentiate the group (many zeros).
+ * Returns null if all raw_scores are identical (truly tied).
+ */
+function localNorm(rows: any[]): Map<string, number> | null {
+  const vals  = rows.map(r => parseFloat(r.raw_score));
+  const min   = Math.min(...vals);
+  const max   = Math.max(...vals);
   const range = max - min;
+  if (range < 0.0001) return null; // all tied — no local norm possible
   return new Map(rows.map(r => [
     r.code,
-    range > 0.0001
-      ? Math.sqrt((parseFloat(r[key]) - min) / range) * 100
-      : 0,
+    Math.sqrt((parseFloat(r.raw_score) - min) / range) * 100,
   ]));
 }
 
 function RankTable({
-  rows,
-  onSelect,
-  color,
-  maxHeight,
-  invert,   // true for safest list: invert local score (safest = 100)
+  rows, onSelect, color, maxHeight,
 }: {
-  rows: any[];
-  onSelect: (c: string) => void;
-  color: string;
-  maxHeight: number;
-  invert: boolean;
+  rows: any[]; onSelect: (c: string) => void;
+  color: string; maxHeight: number;
 }) {
-  const localScores = localNorm(rows);
-  const allZero = Array.from(localScores.values()).every(v => v === 0);
+  // Use global score if it has variation, else fall back to local norm
+  const globalScores = rows.map(r => parseFloat(r.score));
+  const globalRange  = Math.max(...globalScores) - Math.min(...globalScores);
+  const useLocal     = globalRange < 0.1;
+  const local        = useLocal ? localNorm(rows) : null;
 
   return (
     <div style={{ maxHeight, overflowY: 'auto', borderRadius: 4, border: '1px solid #e5e7eb' }}>
@@ -47,17 +46,16 @@ function RankTable({
             <th style={{ textAlign: 'left',  padding: '5px 6px', color: '#6b7280', fontWeight: 600 }}>#</th>
             <th style={{ textAlign: 'left',  padding: '5px 6px', color: '#6b7280', fontWeight: 600 }}>Country</th>
             <th style={{ textAlign: 'right', padding: '5px 6px', color: '#6b7280', fontWeight: 600 }}>
-              Score
-              {!allZero && (
-                <span style={{ fontWeight: 400, fontSize: 10, marginLeft: 4 }}>(in group)</span>
-              )}
+              {useLocal && local ? <span>Score <span style={{ fontWeight: 400, fontSize: 10 }}>(relative)</span></span> : 'Score'}
             </th>
           </tr>
         </thead>
         <tbody>
           {rows.map((row: any) => {
-            const local = localScores.get(row.code) ?? 0;
-            const display = invert ? 100 - local : local;
+            const displayScore = local
+              ? (local.get(row.code) ?? 0).toFixed(1)
+              : row.score;
+
             return (
               <tr
                 key={row.code}
@@ -68,16 +66,8 @@ function RankTable({
               >
                 <td style={{ padding: '4px 6px', color: '#9ca3af' }}>{row.rank}</td>
                 <td style={{ padding: '4px 6px' }}>{row.country}</td>
-                <td style={{ padding: '4px 6px', textAlign: 'right' }}>
-                  <span style={{ fontWeight: 600, color }}>
-                    {allZero ? '0.0' : display.toFixed(1)}
-                  </span>
-                  {/* show global score dimly when it differs from local */}
-                  {!allZero && row.score !== '0.0' && (
-                    <span style={{ color: '#9ca3af', fontSize: 10, marginLeft: 4 }}>
-                      [{row.score}]
-                    </span>
-                  )}
+                <td style={{ padding: '4px 6px', textAlign: 'right', fontWeight: 600, color }}>
+                  {displayScore}
                 </td>
               </tr>
             );
@@ -102,11 +92,7 @@ export default function Top10List({ weights, onSelect }: Props) {
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '12px 0 16px' }}>
         <span style={{ fontSize: 12, color: '#6b7280', whiteSpace: 'nowrap' }}>Show:</span>
         <input
-          type="range"
-          min={5}
-          max={50}
-          step={5}
-          value={count}
+          type="range" min={5} max={50} step={5} value={count}
           onChange={e => setCount(Number(e.target.value))}
           style={{ flex: 1, accentColor: '#6b7280', cursor: 'pointer' }}
         />
@@ -121,7 +107,7 @@ export default function Top10List({ weights, onSelect }: Props) {
       </h2>
       {safeLoading
         ? <p style={{ fontSize: 12, color: '#9ca3af' }}>Loading…</p>
-        : <RankTable rows={safeData?.data ?? []} onSelect={onSelect} color="#16a34a" maxHeight={maxHeight} invert={true} />
+        : <RankTable rows={safeData?.data ?? []} onSelect={onSelect} color="#16a34a" maxHeight={maxHeight} />
       }
 
       {/* Most Dangerous */}
@@ -130,7 +116,7 @@ export default function Top10List({ weights, onSelect }: Props) {
       </h2>
       {dangerLoading
         ? <p style={{ fontSize: 12, color: '#9ca3af' }}>Loading…</p>
-        : <RankTable rows={dangerData?.data ?? []} onSelect={onSelect} color="#dc2626" maxHeight={maxHeight} invert={false} />
+        : <RankTable rows={dangerData?.data ?? []} onSelect={onSelect} color="#dc2626" maxHeight={maxHeight} />
       }
     </div>
   );
