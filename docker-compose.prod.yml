@@ -52,6 +52,7 @@ services:
       - "3000"
     environment:
       - NODE_ENV=production
+      - HOSTNAME=0.0.0.0
       - NEXT_PUBLIC_API_URL=https://worldsafetyindex.org
     depends_on:
       safety-api:
