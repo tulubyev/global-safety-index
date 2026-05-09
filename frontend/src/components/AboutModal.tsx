@@ -66,9 +66,9 @@ export default function AboutModal({ onClose }: Props) {
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20 }}>
           <div>
             <h2 style={{ fontSize: 22, fontWeight: 800, color: '#111827', margin: 0 }}>
-              🌍 World Safety Index
+              🌍 World Safety Index 2026
             </h2>
-            <p style={{ fontSize: 13, color: '#6b7280', margin: '4px 0 0' }}>
+            <p style={{ fontSize: 13, color: '#6b7280', margin: '4px 0 0', textAlign: 'center' }}>
               Actual Data for Your Security
             </p>
           </div>
@@ -155,6 +155,16 @@ export default function AboutModal({ onClose }: Props) {
             ❤️ Donate
           </button>
           <p style={{ fontSize: 11, color: '#d1d5db', marginTop: 6 }}>Coming soon</p>
+        </div>
+
+        {/* Copyright */}
+        <div style={{ borderTop: '1px solid #e5e7eb', paddingTop: 14, marginTop: 20, textAlign: 'center' }}>
+          <p style={{ fontSize: 11, color: '#9ca3af', margin: 0 }}>
+            © {new Date().getFullYear()} World Safety Index. Contact:{' '}
+            <a href="mailto:alt@worldsafetyindex.org" style={{ color: '#1d4ed8', textDecoration: 'none' }}>
+              alt@worldsafetyindex.org
+            </a>
+          </p>
         </div>
       </div>
     </div>

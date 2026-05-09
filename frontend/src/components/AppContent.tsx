@@ -38,9 +38,9 @@ export default function AppContent() {
             onMouseLeave={e => (e.currentTarget.style.opacity = '1')}
           >
             <div style={{ fontSize: 16, fontWeight: 800, color: '#fff', letterSpacing: 0.3 }}>
-              🌍 World Safety Index
+              🌍 World Safety Index 2026
             </div>
-            <div style={{ fontSize: 11, color: '#93c5fd', marginTop: 4, fontWeight: 500 }}>
+            <div style={{ fontSize: 11, color: '#93c5fd', marginTop: 4, fontWeight: 500, textAlign: 'center' }}>
               Actual Data for Your Security
             </div>
           </button>
