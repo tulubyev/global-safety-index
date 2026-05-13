@@ -21,6 +21,9 @@ function getApiUrl() {
 }
 
 // Severity weight by disaster type name (lower-cased substring match)
+// NOTE: 'epidemic' intentionally excluded — epidemic events are collected
+// separately via fetchReliefwebEpidemics() and fed into the pandemic score,
+// not the disaster score, to avoid double-counting.
 const TYPE_WEIGHTS = [
   { match: 'tsunami',    weight: 2.0 },
   { match: 'earthquake', weight: 1.5 },
@@ -32,7 +35,6 @@ const TYPE_WEIGHTS = [
   { match: 'storm',      weight: 1.0 },
   { match: 'landslide',  weight: 0.9 },
   { match: 'drought',    weight: 0.8 },
-  { match: 'epidemic',   weight: 0.6 },
   { match: 'fire',       weight: 0.7 },
 ];
 const DEFAULT_WEIGHT = 0.8;
@@ -174,4 +176,116 @@ async function fetchReliefwebDisasters() {
   return scores;
 }
 
-module.exports = { fetchReliefwebDisasters };
+/**
+ * Fetch CURRENT epidemic/disease outbreak events from ReliefWeb.
+ * Only 'ongoing' status within the last 6 months — we want truly active
+ * outbreaks, not resolved historical events that would inflate the score.
+ *
+ * Half-life: 90 days (epidemics resolve faster than conflicts or disasters).
+ * Severity weights by disease name (hemorrhagic fevers > respiratory > other).
+ *
+ * @returns {Promise<Map<string, number>>}  Map<iso2, rawScore>
+ */
+
+// Epidemic half-life is much shorter than for disasters
+const EPI_HALF_LIFE = 90;
+const EPI_LAMBDA    = Math.LN2 / EPI_HALF_LIFE;
+
+function epiTimeDecay(dateStr) {
+  const d = new Date(dateStr);
+  if (isNaN(d)) return 0.3;
+  const ageDays = Math.max(0, (Date.now() - d) / 86400000);
+  return Math.exp(-EPI_LAMBDA * ageDays);
+}
+
+// Severity multiplier by disease name (case-insensitive substring)
+const EPI_SEVERITY = [
+  { match: 'ebola',         weight: 3.0 },
+  { match: 'marburg',       weight: 3.0 },
+  { match: 'hemorrhagic',   weight: 2.5 },
+  { match: 'plague',        weight: 2.5 },
+  { match: 'mpox',          weight: 2.0 },
+  { match: 'monkeypox',     weight: 2.0 },
+  { match: 'cholera',       weight: 1.8 },
+  { match: 'meningitis',    weight: 1.5 },
+  { match: 'yellow fever',  weight: 1.5 },
+  { match: 'dengue',        weight: 1.3 },
+  { match: 'influenza',     weight: 1.3 },
+  { match: 'covid',         weight: 1.2 },
+  { match: 'measles',       weight: 1.1 },
+];
+const EPI_DEFAULT_WEIGHT = 1.0;
+
+function epiSeverity(name) {
+  const lower = (name || '').toLowerCase();
+  for (const s of EPI_SEVERITY) {
+    if (lower.includes(s.match)) return s.weight;
+  }
+  return EPI_DEFAULT_WEIGHT;
+}
+
+async function fetchReliefwebEpidemics() {
+  const scores = new Map();
+  let offset = 0;
+  let total  = null;
+  let fetched = 0;
+
+  // Only look at the last 6 months — resolved outbreaks should not affect score
+  const sixMonthsAgo = new Date();
+  sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
+  const fromDate = sixMonthsAgo.toISOString().replace(/\.\d{3}Z$/, '+00:00');
+
+  console.log('[ReliefWeb] Fetching CURRENT epidemic events (ongoing, last 6 months)…');
+
+  do {
+    const body = {
+      filter: {
+        operator: 'AND',
+        conditions: [
+          { field: 'type.name', value: 'Epidemic' },
+          // Only 'ongoing' — 'alert' may refer to resolved or preparedness events
+          { field: 'status', value: 'ongoing' },
+          { field: 'date.created', value: { from: fromDate } },
+        ],
+      },
+      fields: { include: ['name', 'country', 'date', 'status'] },
+      sort:   ['date.created:desc'],
+      limit:  1000,
+      offset,
+    };
+
+    const json  = await postRequest(getApiUrl(), body);
+    if (total === null) {
+      total = json.totalCount || 0;
+      console.log(`[ReliefWeb] Current epidemic events found: ${total}`);
+    }
+
+    const items = json.data || [];
+    if (!items.length) break;
+
+    for (const item of items) {
+      const fields    = item.fields || {};
+      const name      = fields.name  || '';
+      const countries = fields.country || [];
+      const created   = fields.date?.created || null;
+
+      const decay    = created ? epiTimeDecay(created) : 0.3;
+      const severity = epiSeverity(name);
+      const contrib  = severity * decay;
+
+      for (const c of countries) {
+        const iso2 = c.iso3 ? iso3to2(c.iso3) : null;
+        if (!iso2) continue;
+        scores.set(iso2, (scores.get(iso2) || 0) + contrib);
+      }
+    }
+
+    fetched += items.length;
+    offset  += items.length;
+  } while (fetched < total);
+
+  console.log(`[ReliefWeb] Active epidemic score: ${scores.size} countries affected`);
+  return scores;
+}
+
+module.exports = { fetchReliefwebDisasters, fetchReliefwebEpidemics };
