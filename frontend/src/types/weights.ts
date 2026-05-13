@@ -3,13 +3,15 @@ export interface Weights {
   disaster: number;
   food:     number;
   seismic:  number;
+  pandemic: number;
 }
 
 export const DEFAULT_WEIGHTS: Weights = {
-  conflict: 35,
-  disaster: 25,
-  food:     25,
-  seismic:  15,
+  conflict: 30,
+  disaster: 20,
+  food:     20,
+  seismic:  10,
+  pandemic: 20,
 };
 
 export const WEIGHT_DIMS: {
@@ -46,5 +48,12 @@ export const WEIGHT_DIMS: {
     icon:  '🔴',
     color: '#7c3aed',
     desc:  'Earthquakes M4.5+ (USGS real-time)',
+  },
+  {
+    key:   'pandemic',
+    label: 'Pandemic Risk',
+    icon:  '🦠',
+    color: '#0891b2',
+    desc:  'Outbreaks & epidemics (WHO + ReliefWeb)',
   },
 ];

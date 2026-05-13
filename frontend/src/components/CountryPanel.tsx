@@ -20,6 +20,7 @@ interface CountryData {
   disaster: number;
   food:     number;
   seismic:  number;
+  pandemic: number;
 }
 
 const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
@@ -85,6 +86,7 @@ export default function CountryPanel({ countryCode, weights, onClose }: Props) {
           disaster: Number(p.disaster) || 0,
           food:     Number(p.food)     || 0,
           seismic:  Number(p.seismic)  || 0,
+          pandemic: Number(p.pandemic) || 0,
         });
         setLoading(false);
       })
@@ -100,12 +102,14 @@ export default function CountryPanel({ countryCode, weights, onClose }: Props) {
       disaster: weights.disaster / total,
       food:     weights.food     / total,
       seismic:  weights.seismic  / total,
+      pandemic: weights.pandemic / total,
     };
     return (
       w.conflict * country.conflict +
       w.disaster * country.disaster +
       w.food     * country.food     +
-      w.seismic  * country.seismic
+      w.seismic  * country.seismic  +
+      w.pandemic * country.pandemic
     );
   })();
 
@@ -194,6 +198,7 @@ export default function CountryPanel({ countryCode, weights, onClose }: Props) {
                     <Line type="monotone" dataKey="conflict" stroke="#dc2626" dot={false} strokeWidth={1.5} name="Conflict" />
                     <Line type="monotone" dataKey="disaster" stroke="#ea580c" dot={false} strokeWidth={1.5} name="Disaster" />
                     <Line type="monotone" dataKey="food"     stroke="#ca8a04" dot={false} strokeWidth={1.5} name="Food" />
+                    <Line type="monotone" dataKey="pandemic" stroke="#0891b2" dot={false} strokeWidth={1.5} name="Pandemic" />
                   </LineChart>
                 </ResponsiveContainer>
               </div>

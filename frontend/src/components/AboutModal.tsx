@@ -40,6 +40,16 @@ const SOURCES = [
     desc: 'Global earthquake hazard map and peak ground acceleration data',
     url:  'https://www.usgs.gov/programs/earthquake-hazards',
   },
+  {
+    name: 'WHO — Disease Outbreak News',
+    desc: 'Official WHO alerts on infectious disease outbreaks worldwide',
+    url:  'https://www.who.int/emergencies/disease-outbreak-news',
+  },
+  {
+    name: 'ReliefWeb — Epidemic Events',
+    desc: 'Ongoing epidemic disasters with country-level impact data (UN OCHA)',
+    url:  'https://reliefweb.int/disasters?type=EP',
+  },
 ];
 
 export default function AboutModal({ onClose }: Props) {
