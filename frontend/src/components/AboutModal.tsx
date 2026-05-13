@@ -103,10 +103,10 @@ export default function AboutModal({ onClose }: Props) {
           <p style={{ fontSize: 13, lineHeight: 1.7, color: '#4b5563', margin: '10px 0 0' }}>
             Whether you are planning international travel, conducting research, or making
             decisions that depend on regional security — our index lets you quickly evaluate
-            risk across four dimensions: <strong>armed conflict</strong>, <strong>natural
-            disasters</strong>, <strong>food security</strong>, and <strong>seismic
-            activity</strong>. Each dimension can be weighted according to your own priorities
-            using the sliders on the left panel.
+            risk across five dimensions: <strong>armed conflict</strong>, <strong>natural
+            disasters</strong>, <strong>food security</strong>, <strong>seismic
+            activity</strong>, and <strong>pandemic risk</strong>. Each dimension can be
+            weighted according to your own priorities using the sliders on the left panel.
           </p>
         </section>
 
@@ -118,6 +118,65 @@ export default function AboutModal({ onClose }: Props) {
             using a weighted formula. A score of <strong>0</strong> indicates minimal risk;
             <strong> 100</strong> represents the highest observed risk level. The colour scale
             on the map transitions from green (safe) through yellow to red (dangerous).
+          </p>
+        </section>
+
+        {/* Index Formula */}
+        <section style={{ marginBottom: 24 }}>
+          <h3 style={{ fontSize: 14, fontWeight: 700, color: '#374151', marginBottom: 10 }}>
+            Index Formula
+          </h3>
+          <p style={{ fontSize: 12, lineHeight: 1.6, color: '#4b5563', marginBottom: 10 }}>
+            The composite risk score is calculated as a weighted sum of five normalised dimensions.
+            Default weights reflect expert consensus but can be adjusted by the user:
+          </p>
+
+          {/* Formula block */}
+          <div style={{
+            background: '#f8fafc', border: '1px solid #e2e8f0',
+            borderRadius: 8, padding: '12px 16px', marginBottom: 12,
+            fontFamily: 'monospace', fontSize: 12, lineHeight: 1.8, color: '#1e293b',
+          }}>
+            <div style={{ color: '#64748b', marginBottom: 4, fontFamily: 'sans-serif', fontSize: 11 }}>Score (0–100)</div>
+            <div>= <span style={{ color: '#dc2626' }}>w₁</span> × Conflict</div>
+            <div>+ <span style={{ color: '#ea580c' }}>w₂</span> × Disaster</div>
+            <div>+ <span style={{ color: '#ca8a04' }}>w₃</span> × Food Security</div>
+            <div>+ <span style={{ color: '#7c3aed' }}>w₄</span> × Seismic</div>
+            <div>+ <span style={{ color: '#0891b2' }}>w₅</span> × Pandemic Risk</div>
+            <div style={{ marginTop: 6, paddingTop: 6, borderTop: '1px solid #e2e8f0', color: '#64748b' }}>
+              w₁+w₂+w₃+w₄+w₅ = 100%
+            </div>
+          </div>
+
+          {/* Default weights table */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
+            {[
+              { icon: '⚔️', label: 'Armed Conflict',   w: '30%', color: '#dc2626', src: 'ACLED, GTD' },
+              { icon: '🌪️', label: 'Natural Disaster',  w: '20%', color: '#ea580c', src: 'INFORM, ReliefWeb' },
+              { icon: '🌾', label: 'Food Security',     w: '20%', color: '#ca8a04', src: 'World Bank' },
+              { icon: '🔴', label: 'Seismic Activity',  w: '10%', color: '#7c3aed', src: 'USGS' },
+              { icon: '🦠', label: 'Pandemic Risk',     w: '20%', color: '#0891b2', src: 'WHO, ReliefWeb' },
+            ].map(d => (
+              <div key={d.label} style={{
+                background: '#fff', border: `1px solid ${d.color}33`,
+                borderLeft: `3px solid ${d.color}`,
+                borderRadius: 6, padding: '7px 10px',
+              }}>
+                <div style={{ fontSize: 12, fontWeight: 600, color: '#1e293b' }}>
+                  {d.icon} {d.label}
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 2 }}>
+                  <span style={{ fontSize: 11, color: '#94a3b8' }}>{d.src}</span>
+                  <span style={{ fontSize: 12, fontWeight: 700, color: d.color }}>{d.w}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <p style={{ fontSize: 11, color: '#94a3b8', marginTop: 10, lineHeight: 1.5 }}>
+            All dimensions are independently normalised to 0–100 before weighting.
+            The formula and weights are open for public discussion — contact us if you
+            have suggestions for improving the methodology.
           </p>
         </section>
 
