@@ -10,20 +10,21 @@ router.post('/', async (req, res) => {
 
   // Accept both object form { conflict, disaster, food, seismic }
   // and legacy array form [w1, w2, w3] for backwards compatibility
-  let wConflict, wDisaster, wFood, wSeismic;
+  let wConflict, wDisaster, wFood, wSeismic, wPandemic;
 
   if (Array.isArray(weights)) {
-    [wConflict = 0, wDisaster = 0, wFood = 0, wSeismic = 0] = weights;
+    [wConflict = 0, wDisaster = 0, wFood = 0, wSeismic = 0, wPandemic = 0] = weights;
   } else if (weights && typeof weights === 'object') {
     wConflict = Number(weights.conflict) || 0;
     wDisaster = Number(weights.disaster) || 0;
     wFood     = Number(weights.food)     || 0;
     wSeismic  = Number(weights.seismic)  || 0;
+    wPandemic = Number(weights.pandemic) || 0;
   } else {
     return res.status(400).json({ error: 'weights must be an object or array' });
   }
 
-  const sum = wConflict + wDisaster + wFood + wSeismic;
+  const sum = wConflict + wDisaster + wFood + wSeismic + wPandemic;
   if (sum === 0) return res.status(400).json({ error: 'all weights are zero' });
 
   // Normalise
@@ -31,6 +32,7 @@ router.post('/', async (req, res) => {
   const n2 = wDisaster / sum;
   const n3 = wFood     / sum;
   const n4 = wSeismic  / sum;
+  const n5 = wPandemic / sum;
 
   const n = Math.min(Number(top_n), 300);
 
@@ -45,13 +47,15 @@ router.post('/', async (req, res) => {
               ($1 * r.conflict::float
              + $2 * r.disaster::float
              + $3 * r.food::float
-             + $4 * r.seismic::float) AS raw_score,
-              r.conflict, r.disaster, r.food, r.seismic
+             + $4 * r.seismic::float
+             + $5 * COALESCE(r.pandemic,0)::float) AS raw_score,
+              r.conflict, r.disaster, r.food, r.seismic,
+              COALESCE(r.pandemic, 0) AS pandemic
        FROM latest_risks r
        JOIN countries c USING(code)
-       WHERE c.code != ALL($5::text[])
+       WHERE c.code != ALL($6::text[])
        ORDER BY raw_score ASC`,
-      [n1, n2, n3, n4, EXCLUDE]
+      [n1, n2, n3, n4, n5, EXCLUDE]
     );
 
     if (!all.length) return res.json({ data: [], weights });
@@ -70,11 +74,12 @@ router.post('/', async (req, res) => {
       disaster:  Number(row.disaster).toFixed(1),
       food:      Number(row.food).toFixed(1),
       seismic:   Number(row.seismic).toFixed(1),
+      pandemic:  Number(row.pandemic).toFixed(1),
     }));
 
     res.json({
       data: scored.slice(0, n),
-      weights: { conflict: n1, disaster: n2, food: n3, seismic: n4 },
+      weights: { conflict: n1, disaster: n2, food: n3, seismic: n4, pandemic: n5 },
     });
   } catch (err) {
     console.error(err);

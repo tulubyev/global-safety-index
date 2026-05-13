@@ -3,8 +3,8 @@ const router = express.Router();
 const { getDb } = require('../services/dbService');
 const cacheService = require('../services/cacheService');
 
-// Default weights used for map coloring (equal across 4 dimensions)
-const W = [0.25, 0.25, 0.25, 0.25];
+// Default weights for map coloring (5 dimensions)
+const W = [0.30, 0.20, 0.20, 0.10, 0.20]; // conflict, disaster, food, seismic, pandemic
 
 // GET /api/map/all — FeatureCollection for choropleth
 router.get('/all', async (req, res) => {
@@ -17,10 +17,11 @@ router.get('/all', async (req, res) => {
     const { rows } = await db.query(
       `SELECT c.code, c.name,
               ST_AsGeoJSON(ST_SimplifyPreserveTopology(c.geom, 0.05)) AS geom,
-              r.conflict::float AS conflict,
-              r.disaster::float AS disaster,
-              r.food::float     AS food,
-              r.seismic::float  AS seismic
+              r.conflict::float              AS conflict,
+              r.disaster::float              AS disaster,
+              r.food::float                  AS food,
+              r.seismic::float               AS seismic,
+              COALESCE(r.pandemic,0)::float  AS pandemic
        FROM countries c
        LEFT JOIN latest_risks r USING(code)
        WHERE c.geom IS NOT NULL
@@ -31,7 +32,8 @@ router.get('/all', async (req, res) => {
     const withScore = rows.map((r) => ({
       ...r,
       raw: (r.conflict || 0) * W[0] + (r.disaster || 0) * W[1]
-         + (r.food    || 0) * W[2] + (r.seismic  || 0) * W[3],
+         + (r.food    || 0) * W[2] + (r.seismic  || 0) * W[3]
+         + (r.pandemic|| 0) * W[4],
     }));
 
     // Global min-max normalize to 0–100
@@ -49,10 +51,11 @@ router.get('/all', async (req, res) => {
           code:     row.code,
           name:     row.name,
           score:    (Math.sqrt((row.raw - minV) / range) * 100).toFixed(1),
-          conflict: row.conflict?.toFixed(1) ?? '0.0',
-          disaster: row.disaster?.toFixed(1) ?? '0.0',
-          food:     row.food?.toFixed(1)     ?? '0.0',
-          seismic:  row.seismic?.toFixed(1)  ?? '0.0',
+          conflict: row.conflict?.toFixed(1)  ?? '0.0',
+          disaster: row.disaster?.toFixed(1)  ?? '0.0',
+          food:     row.food?.toFixed(1)      ?? '0.0',
+          seismic:  row.seismic?.toFixed(1)   ?? '0.0',
+          pandemic: row.pandemic?.toFixed(1)  ?? '0.0',
         },
       })),
     };

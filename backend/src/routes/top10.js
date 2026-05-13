@@ -13,7 +13,10 @@ router.get('/', async (req, res) => {
   try {
     const db = getDb();
     const { rows } = await db.query(
-      `SELECT c.code, c.name, c.name_ru, r.conflict, r.disaster, r.food, r.score, r.measured_at
+      `SELECT c.code, c.name, c.name_ru,
+              r.conflict, r.disaster, r.food, r.seismic,
+              COALESCE(r.pandemic, 0) AS pandemic,
+              r.score, r.measured_at
        FROM latest_risks r
        JOIN countries c USING(code)
        ORDER BY r.score ASC
@@ -22,8 +25,18 @@ router.get('/', async (req, res) => {
     );
 
     const result = {
-      data: rows.map((row, i) => ({ rank: i + 1, country: row.name, code: row.code, score: row.score, conflict: row.conflict, disaster: row.disaster, food: row.food })),
-      weights: [0.35, 0.35, 0.30],
+      data: rows.map((row, i) => ({
+        rank:     i + 1,
+        country:  row.name,
+        code:     row.code,
+        score:    row.score,
+        conflict: row.conflict,
+        disaster: row.disaster,
+        food:     row.food,
+        seismic:  row.seismic,
+        pandemic: row.pandemic,
+      })),
+      weights: { conflict: 0.30, disaster: 0.20, food: 0.20, seismic: 0.10, pandemic: 0.20 },
       updated_at: new Date().toISOString(),
     };
 
