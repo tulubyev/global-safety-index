@@ -54,6 +54,7 @@ router.post('/', async (req, res) => {
        FROM latest_risks r
        JOIN countries c USING(code)
        WHERE c.code != ALL($6::text[])
+         AND (r.conflict > 0 OR r.food > 0)
        ORDER BY raw_score ASC`,
       [n1, n2, n3, n4, n5, EXCLUDE]
     );
