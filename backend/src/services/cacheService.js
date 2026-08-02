@@ -6,8 +6,12 @@ let client;
 
 function getClient() {
   if (!client) {
-    client = new Redis(process.env.REDIS_URL || 'redis://localhost:6379');
-    client.on('error', (err) => console.error('Redis error:', err));
+    client = new Redis(process.env.REDIS_URL || 'redis://localhost:6379', {
+      enableOfflineQueue:  false,
+      maxRetriesPerRequest: 0,
+      retryStrategy: () => 2000, // retry every 2s but never block commands
+    });
+    client.on('error', (err) => console.error('Redis error:', err.message));
   }
   return client;
 }
