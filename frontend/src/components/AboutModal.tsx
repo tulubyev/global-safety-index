@@ -6,23 +6,13 @@ interface Props {
 
 const SOURCES = [
   {
-    name: 'UCDP — Uppsala Conflict Data Program',
-    desc: 'Georeferenced conflict events dataset (GED), Uppsala University',
-    url:  'https://ucdp.uu.se/',
-  },
-  {
-    name: 'GTD — Global Terrorism Database',
-    desc: 'Terrorism incidents worldwide, National Consortium for the Study of Terrorism (START)',
-    url:  'https://www.start.umd.edu/gtd/',
-  },
-  {
     name: 'ACLED — Armed Conflict Location & Event Data',
-    desc: 'Real-time data on political violence and protest events globally',
+    desc: 'Battles, explosions and violence against civilians — fatality-weighted, 2-year half-life',
     url:  'https://acleddata.com/',
   },
   {
     name: 'INFORM Risk Index',
-    desc: 'UN-backed humanitarian crisis risk index covering 191 countries',
+    desc: 'EU JRC / UN structural hazard index (flood, cyclone, drought, tsunami, earthquake, epidemic) — 191 countries',
     url:  'https://drmkc.jrc.ec.europa.eu/inform-index/',
   },
   {
@@ -36,9 +26,9 @@ const SOURCES = [
     url:  'https://data.worldbank.org/topic/agriculture-and-rural-development',
   },
   {
-    name: 'USGS — Seismic Hazard',
-    desc: 'Global earthquake hazard map and peak ground acceleration data',
-    url:  'https://www.usgs.gov/programs/earthquake-hazards',
+    name: 'USGS — Earthquake Feed',
+    desc: 'M4.5+ earthquakes over the last 30 days (recent activity component of seismic risk)',
+    url:  'https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/4.5_month.geojson',
   },
   {
     name: 'WHO — Disease Outbreak News',
@@ -151,11 +141,11 @@ export default function AboutModal({ onClose }: Props) {
           {/* Default weights table */}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
             {[
-              { icon: '⚔️', label: 'Armed Conflict',   w: '30%', color: '#dc2626', src: 'ACLED, GTD' },
+              { icon: '⚔️', label: 'Armed Conflict',   w: '30%', color: '#dc2626', src: 'ACLED' },
               { icon: '🌪️', label: 'Natural Disaster',  w: '20%', color: '#ea580c', src: 'INFORM, ReliefWeb' },
               { icon: '🌾', label: 'Food Security',     w: '20%', color: '#ca8a04', src: 'World Bank' },
-              { icon: '🔴', label: 'Seismic Activity',  w: '10%', color: '#7c3aed', src: 'USGS' },
-              { icon: '🦠', label: 'Pandemic Risk',     w: '20%', color: '#0891b2', src: 'WHO, ReliefWeb' },
+              { icon: '🔴', label: 'Seismic Activity',  w: '10%', color: '#7c3aed', src: 'INFORM, USGS' },
+              { icon: '🦠', label: 'Pandemic Risk',     w: '20%', color: '#0891b2', src: 'INFORM, WHO, ReliefWeb' },
             ].map(d => (
               <div key={d.label} style={{
                 background: '#fff', border: `1px solid ${d.color}33`,
@@ -174,7 +164,8 @@ export default function AboutModal({ onClose }: Props) {
           </div>
 
           <p style={{ fontSize: 11, color: '#94a3b8', marginTop: 10, lineHeight: 1.5 }}>
-            All dimensions are independently normalised to 0–100 before weighting.
+            All dimensions are normalised to 0–100 before weighting; the final score is
+            √(weighted sum / 100) × 100 so that low-risk countries remain distinguishable.
             The formula and weights are open for public discussion — contact us if you
             have suggestions for improving the methodology.
           </p>

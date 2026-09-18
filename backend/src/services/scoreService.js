@@ -1,8 +1,65 @@
-const DEFAULT_WEIGHTS = { w1: 0.35, w2: 0.35, w3: 0.30 };
+'use strict';
+/**
+ * Single source of truth for the composite safety score.
+ *
+ * Every route (map, custom-weights, top10, safety) and the weekly cron must
+ * go through this module so a given country shows the same number everywhere.
+ *
+ *   raw   = Σ wᵢ · dimᵢ            (weights normalised to sum 1, dims 0–100)
+ *   score = √(raw / 100) · 100      (absolute, 0–100 — NOT relative to other countries)
+ *
+ * The square root spreads out the low end so that "quiet" countries are still
+ * distinguishable instead of being crushed against zero by a few extreme ones.
+ */
 
-function calcScore(conflict, disaster, food, weights = DEFAULT_WEIGHTS) {
-  const { w1, w2, w3 } = weights;
-  return w1 * conflict + w2 * disaster + w3 * food;
+const DIMENSIONS = ['conflict', 'disaster', 'food', 'seismic', 'pandemic'];
+
+const DEFAULT_WEIGHTS = Object.freeze({
+  conflict: 0.30,
+  disaster: 0.20,
+  food:     0.20,
+  seismic:  0.10,
+  pandemic: 0.20,
+});
+
+/** Normalise an arbitrary non-negative weight object so the values sum to 1. */
+function normalizeWeights(weights = DEFAULT_WEIGHTS) {
+  const w = {};
+  let sum = 0;
+  for (const d of DIMENSIONS) {
+    const v = Math.max(0, Number(weights[d]) || 0);
+    w[d] = v;
+    sum += v;
+  }
+  if (sum === 0) return { ...DEFAULT_WEIGHTS };
+  for (const d of DIMENSIONS) w[d] /= sum;
+  return w;
 }
 
-module.exports = { calcScore, DEFAULT_WEIGHTS };
+/** Weighted linear combination of the five dimensions (0–100). */
+function rawScore(dims, weights = DEFAULT_WEIGHTS) {
+  const w = normalizeWeights(weights);
+  let raw = 0;
+  for (const d of DIMENSIONS) raw += w[d] * (Number(dims[d]) || 0);
+  return Math.min(100, Math.max(0, raw));
+}
+
+/** Absolute 0–100 composite score from a raw weighted value. */
+function scoreFromRaw(raw) {
+  const r = Math.min(100, Math.max(0, Number(raw) || 0));
+  return Math.sqrt(r / 100) * 100;
+}
+
+/** Convenience: dims + weights → final score. */
+function compositeScore(dims, weights = DEFAULT_WEIGHTS) {
+  return scoreFromRaw(rawScore(dims, weights));
+}
+
+module.exports = {
+  DIMENSIONS,
+  DEFAULT_WEIGHTS,
+  normalizeWeights,
+  rawScore,
+  scoreFromRaw,
+  compositeScore,
+};

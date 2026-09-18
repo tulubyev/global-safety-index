@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { getDb } = require('../services/dbService');
 const cacheService = require('../services/cacheService');
+const { compositeScore, DEFAULT_WEIGHTS } = require('../services/scoreService');
 
 // GET /api/top10?n=10
 router.get('/', async (req, res) => {
@@ -12,31 +13,35 @@ router.get('/', async (req, res) => {
 
   try {
     const db = getDb();
+    // Score recomputed here (not read from r.score) so old rows written with a
+    // previous formula rank consistently with the rest of the API.
     const { rows } = await db.query(
       `SELECT c.code, c.name, c.name_ru,
-              r.conflict, r.disaster, r.food, r.seismic,
-              COALESCE(r.pandemic, 0) AS pandemic,
-              r.score, r.measured_at
+              r.conflict::float, r.disaster::float, r.food::float, r.seismic::float,
+              COALESCE(r.pandemic, 0)::float AS pandemic,
+              r.measured_at
        FROM latest_risks r
-       JOIN countries c USING(code)
-       ORDER BY r.score ASC
-       LIMIT $1`,
-      [n]
+       JOIN countries c USING(code)`
     );
 
+    const scored = rows
+      .map(row => ({ ...row, score: compositeScore(row) }))
+      .sort((a, b) => a.score - b.score)
+      .slice(0, n);
+
     const result = {
-      data: rows.map((row, i) => ({
+      data: scored.map((row, i) => ({
         rank:     i + 1,
         country:  row.name,
         code:     row.code,
-        score:    row.score,
+        score:    row.score.toFixed(1),
         conflict: row.conflict,
         disaster: row.disaster,
         food:     row.food,
         seismic:  row.seismic,
         pandemic: row.pandemic,
       })),
-      weights: { conflict: 0.30, disaster: 0.20, food: 0.20, seismic: 0.10, pandemic: 0.20 },
+      weights: DEFAULT_WEIGHTS,
       updated_at: new Date().toISOString(),
     };
 

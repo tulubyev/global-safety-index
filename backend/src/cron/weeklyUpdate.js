@@ -11,13 +11,12 @@
  *
  * Dimensions and their sources:
  *  conflict  — ACLED violent events (weighted fatalities, 2-yr half-life)
- *  disaster  — INFORM natural hazard + ReliefWeb ongoing disasters
+ *  disaster  — INFORM flood/cyclone/drought/tsunami (70%) + ReliefWeb ongoing disasters (30%)
  *  food      — World Bank undernourishment % (most recent year)
- *  seismic   — USGS earthquakes M4.5+ (last 30 days, energy-weighted)
+ *  seismic   — INFORM earthquake hazard (80%) + USGS M4.5+ last 30 days, log energy (20%)
  *  pandemic  — INFORM epidemic + WHO DON RSS + ReliefWeb epidemic events
  *
- * Default weights (user can override via /api/custom-weights):
- *  conflict 30% | disaster 20% | food 20% | seismic 10% | pandemic 20%
+ * Default weights live in services/scoreService.js (user can override via /api/custom-weights).
  */
 
 const cron = require('node-cron');
@@ -33,15 +32,13 @@ const iso3to2                       = require('../parsers/iso3to2');
 const { minMaxNormalize }           = require('../parsers/normalizer');
 const { getDb }                     = require('../services/dbService');
 const cacheService                  = require('../services/cacheService');
+const { compositeScore }            = require('../services/scoreService');
 
-// Default weights — must sum to 1.0
-const W = {
-  conflict: 0.30,
-  disaster: 0.20,
-  food:     0.20,
-  seismic:  0.10,
-  pandemic: 0.20,
-};
+// Sub-weights inside a dimension (structural index vs. recent events)
+const DISASTER_STRUCT_W = 0.70;   // INFORM flood/cyclone/drought/tsunami
+const DISASTER_EVENT_W  = 0.30;   // ReliefWeb ongoing disasters
+const SEISMIC_STRUCT_W  = 0.80;   // INFORM earthquake hazard
+const SEISMIC_EVENT_W   = 0.20;   // USGS M4.5+ last 30 days (log energy)
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -95,26 +92,40 @@ const PLACE_TO_ISO2 = {
   'yemen': 'YE', 'zambia': 'ZM', 'zimbabwe': 'ZW',
 };
 
+// Longest names first + word boundaries, so "nigeria" never matches "niger",
+// "somalia" never matches "mali", "romania" never matches "oman".
+const PLACE_PATTERNS = Object.entries(PLACE_TO_ISO2)
+  .sort((a, b) => b[0].length - a[0].length)
+  .map(([key, iso2]) => ({
+    re:   new RegExp(`(^|[^a-z])${key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}([^a-z]|$)`, 'i'),
+    iso2,
+  }));
+
 function placeToIso2(placeName) {
   const lower = placeName.toLowerCase().trim();
-  // Direct match
   if (PLACE_TO_ISO2[lower]) return PLACE_TO_ISO2[lower];
-  // Partial match — place name may contain country as substring
-  for (const [key, iso2] of Object.entries(PLACE_TO_ISO2)) {
-    if (lower.includes(key)) return iso2;
+  for (const { re, iso2 } of PLACE_PATTERNS) {
+    if (re.test(lower)) return iso2;
   }
   return null;
 }
 
-/** Convert USGS placeName → iso2 Map */
+/**
+ * Convert USGS placeName → iso2 Map of log10(energy).
+ * Energy is 10^(1.5·M): one M7 is ~5600× an M4.5, so summing raw energy lets
+ * a single quake pin one country at 100 and everyone else at ~0. Log-scale
+ * keeps the ordering but compresses the range to something comparable.
+ */
 function usgsToIso2Map(usgsData) {
-  const map = new Map();
-  for (const { placeName, energy } of usgsData) {
+  const energy = new Map();
+  for (const { placeName, energy: e } of usgsData) {
     const iso2 = placeToIso2(placeName);
     if (!iso2) continue;
-    map.set(iso2, (map.get(iso2) || 0) + energy);
+    energy.set(iso2, (energy.get(iso2) || 0) + e);
   }
-  return map;
+  const out = new Map();
+  for (const [iso2, e] of energy) out.set(iso2, Math.log10(e));
+  return out;
 }
 
 /** Convert World Bank food array → Map<iso2, value> */
@@ -128,25 +139,41 @@ function foodToIso2Map(foodData) {
   return map;
 }
 
-/** Convert INFORM natural hazard array → Map<iso2, value 0–100> */
-function informNaturalMap(informData) {
+/**
+ * INFORM non-seismic natural hazards → Map<iso2, 0–100>.
+ * Mean of flood / cyclone / drought / tsunami (each 0–10) × 10.
+ * Earthquake is deliberately excluded here — it lives in the seismic
+ * dimension, otherwise it would be counted twice.
+ */
+function informNonSeismicMap(informData) {
   const map = new Map();
   for (const row of informData) {
     const iso2 = iso3to2(row.iso3);
     if (!iso2) continue;
-    // INFORM natural hazard is 0–10; scale to 0–100
-    map.set(iso2, (row.natural || 0) * 10);
+    const parts = [row.flood, row.cyclone, row.drought, row.tsunami].map(v => Number(v) || 0);
+    const mean  = parts.reduce((a, b) => a + b, 0) / parts.length;
+    map.set(iso2, mean * 10);
   }
   return map;
 }
 
-/** Merge two Maps by summing values */
-function mergeMaps(...maps) {
+/** INFORM earthquake hazard (0–10) → Map<iso2, 0–100> */
+function informEarthquakeMap(informData) {
+  const map = new Map();
+  for (const row of informData) {
+    const iso2 = iso3to2(row.iso3);
+    if (!iso2) continue;
+    map.set(iso2, (Number(row.earthquake) || 0) * 10);
+  }
+  return map;
+}
+
+/** a·structural + b·events, union of keys, missing side = 0 */
+function blendMaps(structMap, wStruct, eventMap, wEvent) {
   const out = new Map();
-  for (const map of maps) {
-    for (const [k, v] of map) {
-      out.set(k, (out.get(k) || 0) + v);
-    }
+  for (const k of new Set([...structMap.keys(), ...eventMap.keys()])) {
+    const v = wStruct * (structMap.get(k) || 0) + wEvent * (eventMap.get(k) || 0);
+    out.set(k, Math.min(100, v));
   }
   return out;
 }
@@ -197,21 +224,39 @@ async function runWeeklyUpdate() {
   // ── Step 2: Build per-dimension Maps<iso2, rawValue> ─────────────────────
   console.log('[cron] Step 2/5 — Building dimension maps…');
 
+  const db = getDb();
+
+  // Country name → iso2 lookup for sources that only give names (WHO DON)
+  const nameToIso2 = new Map();
+  try {
+    const { rows } = await db.query('SELECT code, name FROM countries');
+    for (const r of rows) nameToIso2.set(r.name.toLowerCase(), r.code);
+  } catch (err) {
+    console.error('[cron] ⚠️  countries lookup failed:', err.message);
+  }
+  for (const row of inform) {
+    const iso2 = iso3to2(row.iso3);
+    if (iso2 && row.country) nameToIso2.set(String(row.country).toLowerCase(), iso2);
+  }
+
   // Conflict: ACLED only (best source for violence)
   const conflictRaw = acled;
 
-  // Disaster: INFORM natural hazard + ReliefWeb (no epidemic)
-  const disasterRaw = mergeMaps(informNaturalMap(inform), reliefDisaster);
+  // Disaster: INFORM flood/cyclone/drought/tsunami (structural, absolute 0–100)
+  //         + ReliefWeb ongoing disasters (events, min-max normalised)
+  const disasterStruct = informNonSeismicMap(inform);
+  const disasterEvents = normalizeMapValues(reliefDisaster);
 
   // Food: World Bank undernourishment
   const foodRaw2 = foodToIso2Map(food);
 
-  // Seismic: USGS earthquakes mapped to iso2
-  const seismicRaw = usgsToIso2Map(usgs);
+  // Seismic: INFORM earthquake hazard (structural) + USGS last-30-days log energy
+  const seismicStruct = informEarthquakeMap(inform);
+  const seismicEvents = normalizeMapValues(usgsToIso2Map(usgs));
 
   // Pandemic: INFORM epidemic + WHO DON + ReliefWeb epidemics
   // (whoParser combines all three sources internally)
-  const pandemicRaw = await fetchPandemicRisk(inform, reliefEpis).catch(err => {
+  const pandemicRaw = await fetchPandemicRisk(inform, reliefEpis, nameToIso2).catch(err => {
     console.error('[cron] ⚠️  WHO pandemic fetch failed:', err.message);
     return new Map();
   });
@@ -220,9 +265,9 @@ async function runWeeklyUpdate() {
   console.log('[cron] Step 3/5 — Normalizing dimensions…');
 
   const conflict = normalizeMapValues(conflictRaw);
-  const disaster = normalizeMapValues(disasterRaw);
+  const disaster = blendMaps(disasterStruct, DISASTER_STRUCT_W, disasterEvents, DISASTER_EVENT_W);
   const foodN    = normalizeMapValues(foodRaw2);
-  const seismic  = normalizeMapValues(seismicRaw);
+  const seismic  = blendMaps(seismicStruct, SEISMIC_STRUCT_W, seismicEvents, SEISMIC_EVENT_W);
   const pandemic = pandemicRaw; // already 0–100 from whoParser
 
   // ── Step 4: Collect all countries and compute scores ─────────────────────
@@ -247,13 +292,8 @@ async function runWeeklyUpdate() {
     const s = seismic.get(iso2)  || 0;
     const p = pandemic.get(iso2) || 0;
 
-    const score = Math.min(100,
-      W.conflict * c +
-      W.disaster * d +
-      W.food     * f +
-      W.seismic  * s +
-      W.pandemic * p
-    );
+    const dims  = { conflict: c, disaster: d, food: f, seismic: s, pandemic: p };
+    const score = compositeScore(dims); // default weights, same formula as API
 
     rows.push({
       code:     iso2,
@@ -269,7 +309,6 @@ async function runWeeklyUpdate() {
   // ── Step 5: Upsert into DB + flush cache ─────────────────────────────────
   console.log(`[cron] Step 5/5 — Upserting ${rows.length} rows into DB…`);
 
-  const db = getDb();
   let upserted = 0;
   let skipped  = 0;
 
@@ -302,9 +341,8 @@ async function runWeeklyUpdate() {
 
   // Flush cache so map/top10 serve fresh data
   await Promise.allSettled([
-    cacheService.del('map:all:v2'),
-    cacheService.del('top10:10'),
-    cacheService.del('top10:50'),
+    cacheService.del('map:all:v3'),
+    ...[5, 10, 15, 20, 25, 30, 35, 40, 45, 50].map(n => cacheService.del(`top10:${n}`)),
   ]);
 
   console.log('[cron] Cache flushed ✅');

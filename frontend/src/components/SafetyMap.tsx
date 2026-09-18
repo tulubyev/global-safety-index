@@ -3,6 +3,7 @@
 import { MapContainer, TileLayer, GeoJSON } from 'react-leaflet';
 import { useEffect, useState, useRef } from 'react';
 import { Weights } from '@/types/weights';
+import { compositeScore } from '@/lib/score';
 
 const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
 
@@ -33,40 +34,23 @@ export default function SafetyMap({ weights, onCountryClick }: Props) {
       .catch(e => { console.error('[SafetyMap]', e); setLoading(false); });
   }, []);
 
-  // Re-score countries when weights change (client-side, instant)
+  // Re-score countries when weights change (client-side, instant).
+  // Same absolute formula as the ranking list and the country panel.
   useEffect(() => {
     if (!geoRef.current || !geoData) return;
-    const total = Object.values(weights).reduce((a: number, b) => a + (b as number), 0) || 1;
-    const w = {
-      conflict: (weights.conflict as number) / total,
-      disaster: (weights.disaster as number) / total,
-      food:     (weights.food     as number) / total,
-      seismic:  (weights.seismic  as number) / total,
-    };
 
-    // Compute raw scores
-    const features = geoData.features;
-    const rawScores = features.map((f: any) => {
-      const p = f.properties;
-      return w.conflict * (Number(p.conflict) || 0)
-           + w.disaster * (Number(p.disaster) || 0)
-           + w.food     * (Number(p.food)     || 0)
-           + w.seismic  * (Number(p.seismic)  || 0);
-    });
-
-    const minV  = Math.min(...rawScores);
-    const maxV  = Math.max(...rawScores);
-    const range = maxV - minV || 1;
-
-    // Update each layer's fill color
     geoRef.current.eachLayer((layer: any) => {
-      const code = layer.feature?.properties?.code;
-      const idx  = features.findIndex((f: any) => f.properties.code === code);
-      if (idx < 0) return;
-      const score = Math.sqrt((rawScores[idx] - minV) / range) * 100;
+      const p = layer.feature?.properties;
+      if (!p) return;
+      if (p.has_data === false) {
+        layer.setStyle({ fillColor: scoreToColor(null) });
+        layer.setTooltipContent(`${p.name}: no data`);
+        return;
+      }
+      const score = compositeScore(p, weights);
       layer.setStyle({ fillColor: scoreToColor(score) });
-      layer.feature.properties._score = score.toFixed(1);
-      layer.setTooltipContent(`${layer.feature.properties.name}: ${score.toFixed(1)}`);
+      p._score = score.toFixed(1);
+      layer.setTooltipContent(`${p.name}: ${score.toFixed(1)}`);
     });
   }, [weights, geoData]);
 
@@ -101,8 +85,9 @@ export default function SafetyMap({ weights, onCountryClick }: Props) {
             })}
             onEachFeature={(feature, layer) => {
               layer.on('click', () => onCountryClick(feature.properties.code));
+              const s = feature.properties.score;
               layer.bindTooltip(
-                `${feature.properties.name}: ${Number(feature.properties.score).toFixed(1)}`,
+                `${feature.properties.name}: ${s == null ? 'no data' : Number(s).toFixed(1)}`,
                 { sticky: true }
               );
             }}

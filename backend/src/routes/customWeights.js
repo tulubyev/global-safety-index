@@ -1,6 +1,7 @@
 const express = require('express');
 const router  = express.Router();
 const { getDb } = require('../services/dbService');
+const { scoreFromRaw } = require('../services/scoreService');
 
 // POST /api/custom-weights
 // Body: { weights: { conflict, disaster, food, seismic }, top_n }
@@ -71,15 +72,12 @@ router.post('/', async (req, res) => {
 
     if (!all.length) return res.json({ data: [], weights });
 
-    // Absolute sqrt normalisation against theoretical max of 100
-    // (each dimension is 0-100, weights sum to 1 → max raw = 100)
-    // This ensures the safest real country still gets a non-zero honest score
-    // rather than being pinned to 0 by relative min-max.
+    // Same absolute formula as map / top10 / cron (services/scoreService.js)
     const scored = all.map((row, i) => ({
       rank:      i + 1,
       country:   row.name,
       code:      row.code,
-      score:     (Math.sqrt(row.raw_score / 100) * 100).toFixed(1),
+      score:     scoreFromRaw(row.raw_score).toFixed(1),
       raw_score: Number(row.raw_score).toFixed(4),   // for client-side local normalization
       conflict:  Number(row.conflict).toFixed(1),
       disaster:  Number(row.disaster).toFixed(1),

@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useTrends } from '@/hooks/useSafetyScore';
 import { Weights, WEIGHT_DIMS } from '@/types/weights';
+import { compositeScore } from '@/lib/score';
 import {
   LineChart, Line, XAxis, YAxis, Tooltip,
   ResponsiveContainer, ReferenceLine, Legend,
@@ -93,25 +94,8 @@ export default function CountryPanel({ countryCode, weights, onClose }: Props) {
       .catch(() => setLoading(false));
   }, [countryCode]);
 
-  // Compute weighted score from current sliders
-  const weightedScore = (() => {
-    if (!country) return 0;
-    const total = Object.values(weights).reduce((a, b) => a + b, 0) || 1;
-    const w = {
-      conflict: weights.conflict / total,
-      disaster: weights.disaster / total,
-      food:     weights.food     / total,
-      seismic:  weights.seismic  / total,
-      pandemic: weights.pandemic / total,
-    };
-    return (
-      w.conflict * country.conflict +
-      w.disaster * country.disaster +
-      w.food     * country.food     +
-      w.seismic  * country.seismic  +
-      w.pandemic * country.pandemic
-    );
-  })();
+  // Same formula as map colouring and ranking list
+  const weightedScore = country ? compositeScore(country, weights) : 0;
 
   // Build trend chart data
   const chartData = (trendsData?.history || []).map((d: any) => ({
@@ -119,6 +103,8 @@ export default function CountryPanel({ countryCode, weights, onClose }: Props) {
     conflict: Number(d.conflict) || 0,
     disaster: Number(d.disaster) || 0,
     food:     Number(d.food)     || 0,
+    seismic:  Number(d.seismic)  || 0,
+    pandemic: Number(d.pandemic) || 0,
   }));
 
   return (

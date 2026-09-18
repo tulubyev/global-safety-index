@@ -91,31 +91,65 @@ function isPheic(text) {
   return PHEIC_KEYWORDS.some(kw => lower.includes(kw));
 }
 
+/** "Democratic Republic of the Congo (DRC)" → "democratic republic of the congo" */
+function cleanName(s) {
+  return s.toLowerCase()
+    .replace(/\(.*?\)/g, ' ')
+    .replace(/^the\s+/, '')
+    .replace(/[^a-z\s'-]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 /**
- * Extract ISO2 country code from a WHO DON title like:
+ * Build a name → iso2 resolver from the aliases above plus an external
+ * Map<lowercase name, iso2> (the `countries` table + INFORM names, passed in
+ * by the cron). Longest names are tried first so "congo" does not shadow
+ * "democratic republic of the congo".
+ */
+function buildResolver(nameToIso2) {
+  const entries = new Map();
+  if (nameToIso2) for (const [n, c] of nameToIso2) entries.set(cleanName(n), c);
+  for (const [n, c] of Object.entries(COUNTRY_ALIASES)) entries.set(cleanName(n), c);
+
+  const sorted = [...entries.entries()].sort((a, b) => b[0].length - a[0].length);
+
+  return function resolve(rawName) {
+    const name = cleanName(rawName);
+    if (!name) return null;
+    if (entries.has(name)) return entries.get(name);
+    // Substring match with word boundaries, longest candidate wins
+    for (const [n, c] of sorted) {
+      if (n.length < 4) continue;
+      const re = new RegExp(`(^|\\s)${n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(\\s|$)`);
+      if (re.test(name)) return c;
+    }
+    return null;
+  };
+}
+
+/**
+ * Extract ISO2 country codes from a WHO DON title like:
  *   "Mpox – Democratic Republic of the Congo"
  *   "Cholera – Haiti, Kenya, Nigeria"
  *   "Avian Influenza A(H5N1) – Cambodia"
+ *   "Marburg virus disease - the United Republic of Tanzania"
  */
-function extractCountriesFromTitle(title) {
-  // WHO DON titles use em-dash (–) or hyphen (-) to separate disease from location
-  const parts = title.split(/–|-/).map(s => s.trim());
+function extractCountriesFromTitle(title, resolve) {
+  // WHO DON titles use em-dash (–), en-dash or hyphen to separate disease from location
+  const parts = title.split(/\s[–—-]\s|–|—/).map(s => s.trim()).filter(Boolean);
   if (parts.length < 2) return [];
 
-  // Everything after the first dash is location (may be comma-separated list)
+  // Everything after the first dash is location (may be comma / "and" separated)
   const locationPart = parts.slice(1).join(' ');
-  const names = locationPart.split(',').map(s => s.trim().toLowerCase());
+  const names = locationPart.split(/,|\band\b|&/).map(s => s.trim()).filter(Boolean);
 
-  const iso2s = [];
+  const iso2s = new Set();
   for (const name of names) {
-    if (COUNTRY_ALIASES[name]) {
-      iso2s.push(COUNTRY_ALIASES[name]);
-    } else {
-      // Try to match against iso3to2 by checking common 2-letter codes
-      // (fallback: skip if unknown)
-    }
+    const iso2 = resolve(name);
+    if (iso2) iso2s.add(iso2);
   }
-  return iso2s;
+  return [...iso2s];
 }
 
 function fetchRss(url) {
@@ -133,8 +167,10 @@ function fetchRss(url) {
  * Parse WHO DON RSS and return Map<iso2, rawScore>.
  * rawScore = sum of (severity_weight × time_decay) for all outbreak items.
  */
-async function fetchWhoDon() {
-  const scores = new Map();
+async function fetchWhoDon(nameToIso2) {
+  const scores  = new Map();
+  const resolve = buildResolver(nameToIso2);
+  let unmatched = 0;
 
   console.log('[WHO] Fetching Disease Outbreak News RSS…');
   let xml;
@@ -165,14 +201,18 @@ async function fetchWhoDon() {
     const severity = isPheic(title) ? 2.0 : 1.0;
     const contrib  = severity * decay;
 
-    const iso2s = extractCountriesFromTitle(title);
+    const iso2s = extractCountriesFromTitle(title, resolve);
+    if (!iso2s.length) {
+      unmatched++;
+      console.warn(`[WHO] No country resolved for: "${title}"`);
+    }
     for (const iso2 of iso2s) {
       scores.set(iso2, (scores.get(iso2) || 0) + contrib);
     }
     count++;
   }
 
-  console.log(`[WHO] Parsed ${count} DON items → ${scores.size} countries affected`);
+  console.log(`[WHO] Parsed ${count} DON items → ${scores.size} countries affected (${unmatched} unmatched)`);
   return scores;
 }
 
@@ -215,11 +255,12 @@ function normalizeMap(map) {
  *
  * @param {Array}            informData       — result of fetchInformRisk()
  * @param {Map<string,number>} reliefwebEpi   — result of fetchReliefwebEpidemics()
+ * @param {Map<string,string>} [nameToIso2]   — lowercase country name → iso2 (from DB)
  * @returns {Promise<Map<string, number>>}    Map<iso2, pandemicScore 0–100>
  */
-async function fetchPandemicRisk(informData, reliefwebEpi) {
+async function fetchPandemicRisk(informData, reliefwebEpi, nameToIso2) {
   // 1. WHO DON (dynamic, real-time)
-  const whoRaw      = await fetchWhoDon();
+  const whoRaw      = await fetchWhoDon(nameToIso2);
 
   // 2. INFORM epidemic (structural vulnerability)
   const informRaw   = buildInformEpidemicMap(informData);
