@@ -39,8 +39,19 @@ router.post('/', async (req, res) => {
   try {
     const db = getDb();
 
-    // HK excluded: not tracked separately in international indices since 2020
-    const EXCLUDE = ['HK'];
+    // Non-sovereign territories: not covered by INFORM / World Bank / ACLED as
+    // separate entities, so 4 of 5 dimensions are 0 and they rank as "safest".
+    // Excluded from rankings (still drawn on the map).
+    const EXCLUDE = [
+      'HK', 'MO',                               // China SARs
+      'PR', 'GU', 'VI', 'AS', 'MP',             // US territories
+      'NC', 'PF', 'GP', 'MQ', 'RE', 'YT',       // France overseas
+      'GL', 'FO',                               // Denmark
+      'BM', 'KY', 'TC', 'VG', 'AI', 'MS', 'FK', // UK overseas
+      'GI', 'IM', 'JE', 'GG',
+      'AW', 'CW', 'SX', 'BQ',                   // Netherlands
+      'AX', 'SJ',                               // Finland / Norway
+    ];
 
     const { rows: all } = await db.query(
       `SELECT c.code, c.name,
@@ -54,7 +65,6 @@ router.post('/', async (req, res) => {
        FROM latest_risks r
        JOIN countries c USING(code)
        WHERE c.code != ALL($6::text[])
-         AND (r.conflict > 0 OR r.food > 0)
        ORDER BY raw_score ASC`,
       [n1, n2, n3, n4, n5, EXCLUDE]
     );
