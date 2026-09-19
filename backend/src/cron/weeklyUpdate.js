@@ -207,9 +207,11 @@ async function runWeeklyUpdate() {
     fetchReliefwebEpidemics(),
   ]);
 
-  // Helper to unwrap settled results with fallback
+  // Helper to unwrap settled results with fallback; remembers what failed
+  const failed = new Set();
   const unwrap = (result, name, fallback) => {
     if (result.status === 'fulfilled') return result.value;
+    failed.add(name);
     console.error(`[cron] ⚠️  ${name} failed:`, result.reason?.message);
     return fallback;
   };
@@ -221,10 +223,37 @@ async function runWeeklyUpdate() {
   const reliefDisaster = unwrap(reliefDisastersRaw, 'ReliefWeb',       new Map());
   const reliefEpis     = unwrap(reliefEpisRaw,      'ReliefWeb-Epi',   new Map());
 
+  // Nothing meaningful to compute without both structural (INFORM) and
+  // conflict (ACLED) data — abort rather than write a row of zeros.
+  if (failed.has('INFORM') && failed.has('ACLED')) {
+    throw new Error('Both INFORM and ACLED failed — aborting update, DB left untouched');
+  }
+
+  // Previous values per country: when a dimension's primary source failed,
+  // carry the last known value forward instead of writing 0 ("missing ≠ safe").
+  const db = getDb();
+  const prev = new Map();
+  try {
+    const { rows } = await db.query(
+      'SELECT code, conflict, disaster, food, seismic, pandemic FROM latest_risks'
+    );
+    for (const r of rows) prev.set(r.code, r);
+  } catch (err) {
+    console.error('[cron] ⚠️  latest_risks lookup failed:', err.message);
+  }
+  const carry = {
+    conflict: failed.has('ACLED'),
+    food:     failed.has('WorldBank'),
+    disaster: failed.has('INFORM'),
+    seismic:  failed.has('INFORM'),
+    pandemic: failed.has('INFORM'),
+  };
+  for (const [dim, on] of Object.entries(carry)) {
+    if (on) console.warn(`[cron] ⚠️  ${dim}: primary source failed → carrying previous values forward`);
+  }
+
   // ── Step 2: Build per-dimension Maps<iso2, rawValue> ─────────────────────
   console.log('[cron] Step 2/5 — Building dimension maps…');
-
-  const db = getDb();
 
   // Country name → iso2 lookup for sources that only give names (WHO DON)
   const nameToIso2 = new Map();
@@ -280,17 +309,22 @@ async function runWeeklyUpdate() {
     ...foodN.keys(),
     ...seismic.keys(),
     ...pandemic.keys(),
+    ...prev.keys(),
   ]);
 
   console.log(`[cron] Countries with data: ${allCodes.size}`);
 
   const rows = [];
   for (const iso2 of allCodes) {
-    const c = conflict.get(iso2) || 0;
-    const d = disaster.get(iso2) || 0;
-    const f = foodN.get(iso2)    || 0;
-    const s = seismic.get(iso2)  || 0;
-    const p = pandemic.get(iso2) || 0;
+    const old = prev.get(iso2) || {};
+    const pick = (dim, map) =>
+      carry[dim] ? (Number(old[dim]) || 0) : (map.get(iso2) || 0);
+
+    const c = pick('conflict', conflict);
+    const d = pick('disaster', disaster);
+    const f = pick('food',     foodN);
+    const s = pick('seismic',  seismic);
+    const p = pick('pandemic', pandemic);
 
     const dims  = { conflict: c, disaster: d, food: f, seismic: s, pandemic: p };
     const score = compositeScore(dims); // default weights, same formula as API
