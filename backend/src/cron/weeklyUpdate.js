@@ -10,7 +10,7 @@
  *  5. Flush all relevant cache keys
  *
  * Dimensions and their sources:
- *  conflict  — ACLED violent events (weighted fatalities, 2-yr half-life)
+ *  conflict  — UCDP GED + candidate events (fatalities, 2-yr half-life); ACLED as fallback
  *  disaster  — INFORM flood/cyclone/drought/tsunami (70%) + ReliefWeb ongoing disasters (30%)
  *  food      — World Bank undernourishment % (most recent year)
  *  seismic   — INFORM earthquake hazard (80%) + USGS M4.5+ last 30 days, log energy (20%)
@@ -22,6 +22,7 @@
 const cron = require('node-cron');
 
 const { fetchAcledConflict }        = require('../parsers/acledParser');
+const { fetchUcdpConflict }         = require('../parsers/ucdpParser');
 const { fetchInformRisk }           = require('../parsers/informParser');
 const { fetchFoodData }             = require('../parsers/worldBankParser');
 const { fetchUsgsSeismicRisk }      = require('../parsers/usgsParser');
@@ -190,17 +191,51 @@ async function runWeeklyUpdate() {
   // ── Step 1: Fetch all sources ─────────────────────────────────────────────
   console.log('[cron] Step 1/5 — Fetching raw data from all sources…');
 
+  const db = getDb();
+
+  // Country name → iso2 lookup for sources that only give names (UCDP, WHO DON).
+  // Built first so the conflict fetch can use it.
+  const nameToIso2 = new Map();
+  try {
+    const { rows } = await db.query('SELECT code, name FROM countries');
+    for (const r of rows) nameToIso2.set(r.name.toLowerCase(), r.code);
+  } catch (err) {
+    console.error('[cron] ⚠️  countries lookup failed:', err.message);
+  }
+  const resolveName = (name) => nameToIso2.get(String(name || '').toLowerCase().trim()) || null;
+
+  // Conflict: UCDP GED (public CSV, always reachable) → ACLED (Cloudflare-
+  // challenged from datacenter IPs, kept as optional fallback) → carry forward.
+  async function fetchConflict() {
+    try {
+      const m = await fetchUcdpConflict(resolveName);
+      if (m.size) return { source: 'UCDP', map: m };
+      throw new Error('UCDP returned no countries');
+    } catch (err) {
+      console.error('[cron] ⚠️  UCDP failed:', err.message);
+    }
+    if (process.env.ACLED_EMAIL && process.env.ACLED_PASSWORD) {
+      try {
+        const m = await fetchAcledConflict(2020);
+        if (m.size) return { source: 'ACLED', map: m };
+      } catch (err) {
+        console.error('[cron] ⚠️  ACLED failed:', err.message);
+      }
+    }
+    throw new Error('no conflict source available');
+  }
+
   // Sources that don't depend on each other run in parallel
   const [
     informData,
-    acledRaw,
+    conflictRes,
     foodRaw,
     usgsRaw,
     reliefDisastersRaw,
     reliefEpisRaw,
   ] = await Promise.allSettled([
     fetchInformRisk(),
-    fetchAcledConflict(2020),
+    fetchConflict(),
     fetchFoodData(),
     fetchUsgsSeismicRisk(),
     fetchReliefwebDisasters(),
@@ -217,21 +252,22 @@ async function runWeeklyUpdate() {
   };
 
   const inform         = unwrap(informData,        'INFORM',          []);
-  const acled          = unwrap(acledRaw,           'ACLED',           new Map());
+  const conflictSrc    = unwrap(conflictRes,        'Conflict',        { source: null, map: new Map() });
   const food           = unwrap(foodRaw,            'WorldBank',       []);
   const usgs           = unwrap(usgsRaw,            'USGS',            []);
   const reliefDisaster = unwrap(reliefDisastersRaw, 'ReliefWeb',       new Map());
   const reliefEpis     = unwrap(reliefEpisRaw,      'ReliefWeb-Epi',   new Map());
+  const acled          = conflictSrc.map;
+  if (conflictSrc.source) console.log(`[cron] Conflict source: ${conflictSrc.source} (${acled.size} countries)`);
 
   // Nothing meaningful to compute without both structural (INFORM) and
-  // conflict (ACLED) data — abort rather than write a row of zeros.
-  if (failed.has('INFORM') && failed.has('ACLED')) {
-    throw new Error('Both INFORM and ACLED failed — aborting update, DB left untouched');
+  // conflict data — abort rather than write a row of zeros.
+  if (failed.has('INFORM') && failed.has('Conflict')) {
+    throw new Error('Both INFORM and conflict sources failed — aborting update, DB left untouched');
   }
 
   // Previous values per country: when a dimension's primary source failed,
   // carry the last known value forward instead of writing 0 ("missing ≠ safe").
-  const db = getDb();
   const prev = new Map();
   try {
     const { rows } = await db.query(
@@ -242,7 +278,7 @@ async function runWeeklyUpdate() {
     console.error('[cron] ⚠️  latest_risks lookup failed:', err.message);
   }
   const carry = {
-    conflict: failed.has('ACLED'),
+    conflict: failed.has('Conflict'),
     food:     failed.has('WorldBank'),
     disaster: failed.has('INFORM'),
     seismic:  failed.has('INFORM'),
@@ -255,20 +291,13 @@ async function runWeeklyUpdate() {
   // ── Step 2: Build per-dimension Maps<iso2, rawValue> ─────────────────────
   console.log('[cron] Step 2/5 — Building dimension maps…');
 
-  // Country name → iso2 lookup for sources that only give names (WHO DON)
-  const nameToIso2 = new Map();
-  try {
-    const { rows } = await db.query('SELECT code, name FROM countries');
-    for (const r of rows) nameToIso2.set(r.name.toLowerCase(), r.code);
-  } catch (err) {
-    console.error('[cron] ⚠️  countries lookup failed:', err.message);
-  }
+  // Add INFORM names to the resolver (for WHO DON titles)
   for (const row of inform) {
     const iso2 = iso3to2(row.iso3);
     if (iso2 && row.country) nameToIso2.set(String(row.country).toLowerCase(), iso2);
   }
 
-  // Conflict: ACLED only (best source for violence)
+  // Conflict: UCDP GED (or ACLED fallback) — decay-weighted fatalities
   const conflictRaw = acled;
 
   // Disaster: INFORM flood/cyclone/drought/tsunami (structural, absolute 0–100)

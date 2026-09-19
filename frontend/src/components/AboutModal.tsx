@@ -6,9 +6,9 @@ interface Props {
 
 const SOURCES = [
   {
-    name: 'ACLED — Armed Conflict Location & Event Data',
-    desc: 'Battles, explosions and violence against civilians — fatality-weighted, 2-year half-life',
-    url:  'https://acleddata.com/',
+    name: 'UCDP — Uppsala Conflict Data Program (GED)',
+    desc: 'Georeferenced fatalities from state-based, non-state and one-sided violence; yearly GED + monthly candidate events, 2-year half-life. CC BY 4.0 — Davies, Pettersson & Öberg, JPR 2026',
+    url:  'https://ucdp.uu.se/',
   },
   {
     name: 'INFORM Risk Index',
@@ -141,7 +141,7 @@ export default function AboutModal({ onClose }: Props) {
           {/* Default weights table */}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
             {[
-              { icon: '⚔️', label: 'Armed Conflict',   w: '30%', color: '#dc2626', src: 'ACLED' },
+              { icon: '⚔️', label: 'Armed Conflict',   w: '30%', color: '#dc2626', src: 'UCDP' },
               { icon: '🌪️', label: 'Natural Disaster',  w: '20%', color: '#ea580c', src: 'INFORM, ReliefWeb' },
               { icon: '🌾', label: 'Food Security',     w: '20%', color: '#ca8a04', src: 'World Bank' },
               { icon: '🔴', label: 'Seismic Activity',  w: '10%', color: '#7c3aed', src: 'INFORM, USGS' },

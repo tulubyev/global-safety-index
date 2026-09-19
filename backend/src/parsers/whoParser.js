@@ -28,9 +28,13 @@
 const https   = require('https');
 const iso3to2 = require('./iso3to2');
 
-// ── WHO DON RSS ──────────────────────────────────────────────────────────────
+// ── WHO DON (OData API behind who.int; the old RSS feed is gone — 404) ──────
 
-const WHO_DON_RSS = 'https://www.who.int/feeds/entity/csr/don/en/rss.xml';
+const WHO_DON_API =
+  'https://www.who.int/api/news/diseaseoutbreaknews'
+  + '?$orderby=PublicationDateAndTime%20desc&$top=120'
+  + '&$select=Title,PublicationDateAndTime,DonId,UrlName';
+const USER_AGENT = 'WorldSafetyIndex/1.0 (+https://worldsafetyindex.org)';
 
 // Country name aliases: WHO uses full/varied names, map to ISO2
 // Covers the most common cases; unmatched names are skipped gracefully.
@@ -152,52 +156,49 @@ function extractCountriesFromTitle(title, resolve) {
   return [...iso2s];
 }
 
-function fetchRss(url) {
+function fetchJson(url, redirects = 3) {
   return new Promise((resolve, reject) => {
-    https.get(url, { headers: { 'User-Agent': 'GlobalSafetyIndex/1.0' } }, (res) => {
+    https.get(url, { headers: { 'User-Agent': USER_AGENT, 'Accept': 'application/json' } }, (res) => {
+      if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location && redirects > 0) {
+        res.resume();
+        return fetchJson(new URL(res.headers.location, url).href, redirects - 1).then(resolve).catch(reject);
+      }
       let data = '';
       res.on('data', c => data += c);
-      res.on('end', () => resolve(data));
+      res.on('end', () => {
+        if (res.statusCode !== 200) return reject(new Error(`HTTP ${res.statusCode}: ${data.slice(0, 120)}`));
+        try { resolve(JSON.parse(data)); } catch (e) { reject(new Error(`Bad JSON from WHO: ${e.message}`)); }
+      });
       res.on('error', reject);
     }).on('error', reject);
   });
 }
 
 /**
- * Parse WHO DON RSS and return Map<iso2, rawScore>.
- * rawScore = sum of (severity_weight × time_decay) for all outbreak items.
+ * Fetch WHO Disease Outbreak News via the who.int OData API and return
+ * Map<iso2, rawScore>, rawScore = Σ severity_weight × time_decay per item.
  */
 async function fetchWhoDon(nameToIso2) {
   const scores  = new Map();
   const resolve = buildResolver(nameToIso2);
   let unmatched = 0;
 
-  console.log('[WHO] Fetching Disease Outbreak News RSS…');
-  let xml;
+  console.log('[WHO] Fetching Disease Outbreak News (OData API)…');
+  let items;
   try {
-    xml = await fetchRss(WHO_DON_RSS);
+    const json = await fetchJson(WHO_DON_API);
+    items = Array.isArray(json.value) ? json.value : [];
   } catch (err) {
-    console.warn('[WHO] RSS fetch failed, skipping:', err.message);
+    console.warn('[WHO] DON fetch failed, skipping:', err.message);
     return scores;
   }
 
-  // Simple regex-based XML item extraction (no external parser dependency)
-  const itemRegex = /<item>([\s\S]*?)<\/item>/g;
-  const titleRegex = /<title><!\[CDATA\[(.*?)\]\]><\/title>|<title>(.*?)<\/title>/;
-  const dateRegex  = /<pubDate>(.*?)<\/pubDate>/;
-
-  let match;
   let count = 0;
-
-  while ((match = itemRegex.exec(xml)) !== null) {
-    const block    = match[1];
-    const titleM   = titleRegex.exec(block);
-    const dateM    = dateRegex.exec(block);
-    if (!titleM) continue;
-
-    const title    = (titleM[1] || titleM[2] || '').trim();
-    const dateStr  = dateM ? dateM[1].trim() : null;
-    const decay    = dateStr ? timeDecay(dateStr) : 0.5;
+  for (const it of items) {
+    const title   = String(it.Title || '').replace(/\s+/g, ' ').trim();
+    if (!title) continue;
+    const dateStr = it.PublicationDateAndTime || null;
+    const decay   = dateStr ? timeDecay(dateStr) : 0.5;
     const severity = isPheic(title) ? 2.0 : 1.0;
     const contrib  = severity * decay;
 

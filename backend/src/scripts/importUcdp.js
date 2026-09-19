@@ -5,33 +5,23 @@ const { getDb } = require('../services/dbService');
 
 async function main() {
   console.log('Starting UCDP conflict data import...');
-  const ucdpData = await fetchUcdpConflict(2020, 2023);
-  console.log(`Got data for ${ucdpData.length} country entries`);
-
-  if (!ucdpData.length) {
-    console.log('No data — aborting');
-    process.exit(1);
-  }
-
   const db = getDb();
-
-  // Match UCDP country names to our countries table
   const { rows: countries } = await db.query('SELECT code, name FROM countries');
-  const nameToCode = {};
-  for (const c of countries) nameToCode[c.name.toLowerCase()] = c.code;
+  const nameToCode = new Map(countries.map(c => [c.name.toLowerCase(), c.code]));
+  const resolveName = (n) => nameToCode.get(String(n || '').toLowerCase().trim()) || null;
 
-  // Normalize fatalities to 0-100
-  const fatalities = ucdpData.map((d) => d.fatalities);
-  const normalized = minMaxNormalize(fatalities);
+  const ucdpMap = await fetchUcdpConflict(resolveName);
+  console.log(`Got data for ${ucdpMap.size} countries`);
+  if (!ucdpMap.size) { console.log('No data — aborting'); process.exit(1); }
+
+  const codes = [...ucdpMap.keys()];
+  const normalized = minMaxNormalize(codes.map(c => ucdpMap.get(c)));
 
   let updated = 0;
   const today = new Date().toISOString().slice(0, 10);
 
-  for (let i = 0; i < ucdpData.length; i++) {
-    const entry = ucdpData[i];
-    const code = nameToCode[entry.name.toLowerCase()];
-    if (!code) continue;
-
+  for (let i = 0; i < codes.length; i++) {
+    const code = codes[i];
     const conflictScore = normalized[i];
 
     // Get latest disaster/food values
