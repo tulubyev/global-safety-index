@@ -28,12 +28,17 @@ const VIOLENT_TYPES = [
 ].join('|');
 
 const HALF_LIFE_YEARS = 2;
+const USER_AGENT = 'WorldSafetyIndex/1.0 (+https://worldsafetyindex.org; alt@worldsafetyindex.org)';
 
 /** Get OAuth bearer token using myACLED credentials */
 async function getToken() {
   const res = await fetch(TOKEN_URL, {
     method:  'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+      'Accept':       'application/json',
+      'User-Agent':   USER_AGENT,
+    },
     body: new URLSearchParams({
       username:   process.env.ACLED_EMAIL    || '',
       password:   process.env.ACLED_PASSWORD || '',
@@ -44,7 +49,11 @@ async function getToken() {
   });
   if (!res.ok) {
     const text = await res.text();
-    throw new Error(`ACLED OAuth failed ${res.status}: ${text}\n\nMake sure you have a myACLED account at https://acleddata.com/register/`);
+    const cf   = /cloudflare|challenge-platform|Just a moment/i.test(text);
+    const hint = cf
+      ? 'Blocked by Cloudflare bot challenge in front of acleddata.com — server-side requests from this IP are being challenged; credentials were never checked.'
+      : 'Make sure you have a myACLED account at https://acleddata.com/register/';
+    throw new Error(`ACLED OAuth failed ${res.status}: ${text.slice(0, 200).replace(/\s+/g, ' ')}… — ${hint}`);
   }
   const json = await res.json();
   return json.access_token;
@@ -65,7 +74,11 @@ async function fetchPage(token, startYear, page) {
   });
 
   const res = await fetch(`${API_URL}?${params}`, {
-    headers: { Authorization: `Bearer ${token}` },
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Accept':      'application/json',
+      'User-Agent':  USER_AGENT,
+    },
   });
 
   if (!res.ok) {
