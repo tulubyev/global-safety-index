@@ -32,7 +32,7 @@ const iso3to2 = require('./iso3to2');
 
 const WHO_DON_API =
   'https://www.who.int/api/news/diseaseoutbreaknews'
-  + '?$orderby=PublicationDateAndTime%20desc&$top=120'
+  + '?$orderby=PublicationDateAndTime%20desc&$top=100'
   + '&$select=Title,PublicationDateAndTime,DonId,UrlName';
 const USER_AGENT = 'WorldSafetyIndex/1.0 (+https://worldsafetyindex.org)';
 
