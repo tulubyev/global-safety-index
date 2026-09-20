@@ -95,65 +95,92 @@ function isPheic(text) {
   return PHEIC_KEYWORDS.some(kw => lower.includes(kw));
 }
 
-/** "Democratic Republic of the Congo (DRC)" → "democratic republic of the congo" */
+/** "Democratic Republic of the Congo (DRC)" -> "democratic republic of the congo" */
 function cleanName(s) {
-  return s.toLowerCase()
-    .replace(/\(.*?\)/g, ' ')
+  return String(s || '').toLowerCase()
+    .replace(/\(.*?\)/g, ' ')      // drop "(H5N1)", "(AFRO)", "(DRC)"
+    .replace(/[^a-z\s'-]/g, ' ')    // drop digits, colons, ampersands, dashes of any kind
+    .replace(/-/g, ' ')             // hyphen is a word boundary: "A(H5N2)-Mexico"
     .replace(/^the\s+/, '')
-    .replace(/[^a-z\s'-]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
 }
 
+// Titles that describe a global or regional situation rather than named countries.
+// Matched after cleanName(), so hyphens are already spaces.
+const NON_COUNTRY_SCOPES = [
+  'global', 'worldwide', 'multi country', 'multi locations', 'multiple countries',
+  'region of the americas', 'african region', 'european region',
+  'western pacific', 'south east asia', 'eastern mediterranean',
+  'northern hemisphere', 'southern hemisphere',
+];
+
+// Disease names that embed a country name — removed before scanning so that
+// "Crimean-Congo haemorrhagic fever" does not resolve to Congo.
+const DISEASE_NOISE = [
+  'crimean congo',
+  'middle east respiratory syndrome',
+  'guinea worm',
+];
+
 /**
- * Build a name → iso2 resolver from the aliases above plus an external
+ * Build a country matcher from the aliases above plus an external
  * Map<lowercase name, iso2> (the `countries` table + INFORM names, passed in
- * by the cron). Longest names are tried first so "congo" does not shadow
- * "democratic republic of the congo".
+ * by the cron).
+ *
+ * findAll() scans the WHOLE title instead of splitting on a separator: WHO
+ * titles use every punctuation style there is ("disease- Ethiopia",
+ * "A(H5N2)-Mexico", "virus, DR Congo & Uganda", "type 1- Israel"), and the
+ * disease name itself often contains a hyphen. Longest names match first and
+ * each match is blanked out, so "Democratic Republic of the Congo" cannot then
+ * also match "Congo", and "Nigeria" cannot also match "Niger".
  */
 function buildResolver(nameToIso2) {
   const entries = new Map();
   if (nameToIso2) for (const [n, c] of nameToIso2) entries.set(cleanName(n), c);
   for (const [n, c] of Object.entries(COUNTRY_ALIASES)) entries.set(cleanName(n), c);
+  entries.delete('');
 
-  const sorted = [...entries.entries()].sort((a, b) => b[0].length - a[0].length);
+  const sorted = [...entries.entries()]
+    .filter(([n]) => n.length >= 4)
+    .sort((a, b) => b[0].length - a[0].length);
 
-  return function resolve(rawName) {
-    const name = cleanName(rawName);
-    if (!name) return null;
-    if (entries.has(name)) return entries.get(name);
-    // Substring match with word boundaries, longest candidate wins
-    for (const [n, c] of sorted) {
-      if (n.length < 4) continue;
-      const re = new RegExp(`(^|\\s)${n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(\\s|$)`);
-      if (re.test(name)) return c;
-    }
-    return null;
+  return {
+    /** true when the title names no country at all (global / regional scope) */
+    isGlobalScope(text) {
+      const t = cleanName(text);
+      return NON_COUNTRY_SCOPES.some(scope => t.includes(scope));
+    },
+
+    /** every ISO2 whose country name appears in `text` */
+    findAll(text) {
+      let hay = ' ' + cleanName(text) + ' ';
+      for (const noise of DISEASE_NOISE) hay = hay.split(noise).join(' ');
+
+      const found = new Set();
+      for (const [name, iso2] of sorted) {
+        if (found.has(iso2)) continue;
+        const i = hay.indexOf(' ' + name + ' ');
+        if (i < 0) continue;
+        found.add(iso2);
+        // blank the match so a shorter name inside it cannot match too
+        hay = hay.slice(0, i + 1) + ' '.repeat(name.length) + hay.slice(i + 1 + name.length);
+      }
+      return [...found];
+    },
   };
 }
 
 /**
- * Extract ISO2 country codes from a WHO DON title like:
- *   "Mpox – Democratic Republic of the Congo"
- *   "Cholera – Haiti, Kenya, Nigeria"
- *   "Avian Influenza A(H5N1) – Cambodia"
- *   "Marburg virus disease - the United Republic of Tanzania"
+ * ISO2 codes named in a WHO DON title, e.g.
+ *   "Ebola ... , Democratic Republic of the Congo & Uganda"  -> [CD, UG]
+ *   "Marburg virus disease- Ethiopia"                        -> [ET]
+ *   "Human infection ... Influenza A(H5N2)-Mexico"           -> [MX]
+ *   "Dengue - Global situation"                              -> []  (global scope)
  */
-function extractCountriesFromTitle(title, resolve) {
-  // WHO DON titles use em-dash (–), en-dash or hyphen to separate disease from location
-  const parts = title.split(/\s[–—-]\s|–|—/).map(s => s.trim()).filter(Boolean);
-  if (parts.length < 2) return [];
-
-  // Everything after the first dash is location (may be comma / "and" separated)
-  const locationPart = parts.slice(1).join(' ');
-  const names = locationPart.split(/,|\band\b|&/).map(s => s.trim()).filter(Boolean);
-
-  const iso2s = new Set();
-  for (const name of names) {
-    const iso2 = resolve(name);
-    if (iso2) iso2s.add(iso2);
-  }
-  return [...iso2s];
+function extractCountriesFromTitle(title, matcher) {
+  if (matcher.isGlobalScope(title)) return [];
+  return matcher.findAll(title);
 }
 
 function fetchJson(url, redirects = 3) {
@@ -180,8 +207,9 @@ function fetchJson(url, redirects = 3) {
  */
 async function fetchWhoDon(nameToIso2) {
   const scores  = new Map();
-  const resolve = buildResolver(nameToIso2);
-  let unmatched = 0;
+  const matcher = buildResolver(nameToIso2);
+  const unmatched = [];
+  let globalScope = 0;
 
   console.log('[WHO] Fetching Disease Outbreak News (OData API)…');
   let items;
@@ -202,10 +230,10 @@ async function fetchWhoDon(nameToIso2) {
     const severity = isPheic(title) ? 2.0 : 1.0;
     const contrib  = severity * decay;
 
-    const iso2s = extractCountriesFromTitle(title, resolve);
+    const iso2s = extractCountriesFromTitle(title, matcher);
     if (!iso2s.length) {
-      unmatched++;
-      console.warn(`[WHO] No country resolved for: "${title}"`);
+      if (matcher.isGlobalScope(title)) globalScope++;
+      else unmatched.push(title);
     }
     for (const iso2 of iso2s) {
       scores.set(iso2, (scores.get(iso2) || 0) + contrib);
@@ -213,7 +241,11 @@ async function fetchWhoDon(nameToIso2) {
     count++;
   }
 
-  console.log(`[WHO] Parsed ${count} DON items → ${scores.size} countries affected (${unmatched} unmatched)`);
+  if (unmatched.length) {
+    console.warn(`[WHO] No country in ${unmatched.length} title(s): ${unmatched.slice(0, 6).map(t => `"${t}"`).join(', ')}${unmatched.length > 6 ? ' …' : ''}`);
+  }
+  console.log(`[WHO] Parsed ${count} DON items → ${scores.size} countries affected `
+    + `(${globalScope} global/regional, ${unmatched.length} unresolved)`);
   return scores;
 }
 
