@@ -18,15 +18,25 @@
  *    Passed in as Map<iso2, rawScore> from reliefwebParser.fetchReliefwebEpidemics().
  *    Weight: 25% of final score.
  *
- * Final pandemic score = normalized(INFORM) * 0.40
- *                      + normalized(WHO DON) * 0.35
- *                      + normalized(ReliefWeb epidemic) * 0.25
+ * Final pandemic score = INFORM (already 0–100)      * 0.40
+ *                      + scaled(WHO DON)              * 0.35
+ *                      + scaled(ReliefWeb epidemic)   * 0.25
+ *
+ * All scaling uses fixed anchors (parsers/scale.js), never min-max.
  *
  * Result: Map<iso2, pandemicScore>  where pandemicScore ∈ [0, 100]
  */
 
 const https   = require('https');
 const iso3to2 = require('./iso3to2');
+const { logAnchoredScale, scaleMap } = require('./scale');
+
+// Σ (severity × time decay) over outbreak items. ≈1 means one fresh
+// average-severity outbreak; a PHEIC-level event alone contributes 2.
+const WHO_DON_ANCHORS = [[0.3, 0], [1, 35], [3, 70], [8, 100]];
+
+// Σ (disease severity × decay) over ongoing ReliefWeb epidemic events.
+const RELIEF_EPI_ANCHORS = [[0.3, 0], [1, 30], [3, 65], [8, 100]];
 
 // ── WHO DON (OData API behind who.int; the old RSS feed is gone — 404) ──────
 
@@ -266,21 +276,6 @@ function buildInformEpidemicMap(informData) {
   return map;
 }
 
-// ── Normalization helper ─────────────────────────────────────────────────────
-
-function normalizeMap(map) {
-  if (!map.size) return map;
-  const vals = [...map.values()];
-  const min  = Math.min(...vals);
-  const max  = Math.max(...vals);
-  const range = max - min || 1;
-  const out  = new Map();
-  for (const [k, v] of map) {
-    out.set(k, ((v - min) / range) * 100);
-  }
-  return out;
-}
-
 // ── Main export ──────────────────────────────────────────────────────────────
 
 /**
@@ -298,10 +293,13 @@ async function fetchPandemicRisk(informData, reliefwebEpi, nameToIso2) {
   // 2. INFORM epidemic (structural vulnerability)
   const informRaw   = buildInformEpidemicMap(informData);
 
-  // 3. Normalize all three sources to 0–100
-  const whoNorm     = normalizeMap(whoRaw);
-  const informNorm  = normalizeMap(informRaw);
-  const reliefNorm  = normalizeMap(reliefwebEpi);
+  // 3. Put all three sources on the absolute 0–100 scale.
+  //    INFORM epidemic is already absolute (0–10 index × 10) — min-maxing it
+  //    would have made a country's structural vulnerability depend on the
+  //    worst country in the batch.
+  const whoNorm     = scaleMap(whoRaw,       v => logAnchoredScale(v, WHO_DON_ANCHORS));
+  const informNorm  = informRaw;
+  const reliefNorm  = scaleMap(reliefwebEpi, v => logAnchoredScale(v, RELIEF_EPI_ANCHORS));
 
   // 4. Combine: collect all known iso2 codes
   const allCodes = new Set([

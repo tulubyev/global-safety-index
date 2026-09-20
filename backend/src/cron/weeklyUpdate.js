@@ -4,13 +4,13 @@
  *
  * Flow:
  *  1. Fetch raw data from all sources in parallel where possible
- *  2. Normalize each dimension to 0–100 across all countries
+ *  2. Map each dimension onto an absolute 0–100 scale (fixed anchors, not min-max)
  *  3. Compute composite score using default weights
  *  4. Upsert into `risks` table (one row per country per date)
  *  5. Flush all relevant cache keys
  *
  * Dimensions and their sources:
- *  conflict  — UCDP GED + candidate events (fatalities, 2-yr half-life); ACLED as fallback
+ *  conflict  — UCDP GED + candidate events, deaths per 100k/yr (2-yr half-life); ACLED fallback
  *  disaster  — INFORM flood/cyclone/drought/tsunami (70%) + ReliefWeb ongoing disasters (30%)
  *  food      — World Bank undernourishment % (most recent year)
  *  seismic   — INFORM earthquake hazard (80%) + USGS M4.5+ last 30 days, log energy (20%)
@@ -24,13 +24,15 @@ const cron = require('node-cron');
 const { fetchAcledConflict }        = require('../parsers/acledParser');
 const { fetchUcdpConflict }         = require('../parsers/ucdpParser');
 const { fetchInformRisk }           = require('../parsers/informParser');
-const { fetchFoodData }             = require('../parsers/worldBankParser');
+const { fetchFoodData,
+        fetchPopulation }           = require('../parsers/worldBankParser');
 const { fetchUsgsSeismicRisk }      = require('../parsers/usgsParser');
 const { fetchReliefwebDisasters,
         fetchReliefwebEpidemics }   = require('../parsers/reliefwebParser');
 const { fetchPandemicRisk }         = require('../parsers/whoParser');
 const iso3to2                       = require('../parsers/iso3to2');
-const { minMaxNormalize }           = require('../parsers/normalizer');
+const { logAnchoredScale,
+        anchoredScale, scaleMap }   = require('../parsers/scale');
 const { getDb }                     = require('../services/dbService');
 const cacheService                  = require('../services/cacheService');
 const { compositeScore }            = require('../services/scoreService');
@@ -41,18 +43,35 @@ const DISASTER_EVENT_W  = 0.30;   // ReliefWeb ongoing disasters
 const SEISMIC_STRUCT_W  = 0.80;   // INFORM earthquake hazard
 const SEISMIC_EVENT_W   = 0.20;   // USGS M4.5+ last 30 days (log energy)
 
-// ── Helpers ──────────────────────────────────────────────────────────────────
+// ── Absolute scales ──────────────────────────────────────────────────────────
+// Every dimension maps a real quantity to 0–100 through fixed anchors, never
+// min-max: a score must mean the same thing regardless of which other
+// countries are in the dataset, and must stay comparable across runs.
 
-/** Normalize a Map<iso2, rawValue> → Map<iso2, 0–100> */
-function normalizeMapValues(map) {
-  if (!map.size) return map;
-  const keys = [...map.keys()];
-  const vals = [...map.values()];
-  const norm = minMaxNormalize(vals);
-  const out  = new Map();
-  keys.forEach((k, i) => out.set(k, norm[i]));
-  return out;
-}
+// Must match the half-life used by the conflict parsers. The decay-weighted
+// sum of a steady process converges to rate × H/ln2, so dividing by that
+// turns the weighted total back into an annual rate.
+const CONFLICT_HALF_LIFE_YEARS = 2;
+const CONFLICT_DECAY_WINDOW    = CONFLICT_HALF_LIFE_YEARS / Math.LN2;  // ≈ 2.89 years
+
+// Conflict deaths per 100k population per year (log scale: each order of
+// magnitude is a step). 1/100k/yr ≈ a country in sustained low-level conflict,
+// 100/100k/yr ≈ full-scale war.
+const CONFLICT_ANCHORS = [[0.01, 0], [0.1, 25], [1, 50], [10, 75], [100, 100]];
+
+// Prevalence of undernourishment, % of population — FAO severity bands
+// (<2.5 % very low, 5–15 % moderate, 15–25 % high, >25 % very high).
+const FOOD_ANCHORS = [[2.5, 0], [5, 20], [15, 50], [25, 75], [40, 100]];
+
+// ReliefWeb: Σ (type weight × time decay) over ongoing disasters.
+// ≈1 means one fresh average-severity disaster.
+const DISASTER_EVENT_ANCHORS = [[0.3, 0], [1, 30], [3, 60], [10, 100]];
+
+// USGS: log10 of summed seismic energy over 30 days. A single M4.5 is ≈6.75,
+// a single M7.5 ≈11.25, so the anchors are already in log space.
+const SEISMIC_EVENT_ANCHORS = [[6.5, 0], [8, 30], [9.5, 60], [11, 100]];
+
+// ── Helpers ──────────────────────────────────────────────────────────────────
 
 /**
  * USGS returns place name strings, not ISO codes.
@@ -129,15 +148,35 @@ function usgsToIso2Map(usgsData) {
   return out;
 }
 
-/** Convert World Bank food array → Map<iso2, value> */
-function foodToIso2Map(foodData) {
+/** Convert a World Bank indicator array → Map<iso2, value> */
+function wbToIso2Map(rows) {
   const map = new Map();
-  for (const { code3, value } of foodData) {
+  for (const { code3, value } of rows) {
     const iso2 = iso3to2(code3);
     if (!iso2) continue;
     map.set(iso2, value);
   }
   return map;
+}
+
+/**
+ * Decay-weighted fatalities → deaths per 100k population per year.
+ *
+ * Without the population denominator a large country looks more dangerous
+ * than a small one at the same level of violence, purely because more people
+ * live there. Countries with no population figure are dropped rather than
+ * scored on an absolute count.
+ */
+function conflictRateMap(weighted, population) {
+  const out = new Map();
+  let noPop = 0;
+  for (const [iso2, total] of weighted) {
+    const pop = population.get(iso2);
+    if (!pop || pop <= 0) { noPop++; continue; }
+    out.set(iso2, ((total / CONFLICT_DECAY_WINDOW) / pop) * 100000);
+  }
+  if (noPop) console.warn(`[cron] ⚠️  conflict: ${noPop} countries dropped (no population data)`);
+  return out;
 }
 
 /**
@@ -230,6 +269,7 @@ async function runWeeklyUpdate() {
     informData,
     conflictRes,
     foodRaw,
+    popRaw,
     usgsRaw,
     reliefDisastersRaw,
     reliefEpisRaw,
@@ -237,6 +277,7 @@ async function runWeeklyUpdate() {
     fetchInformRisk(),
     fetchConflict(),
     fetchFoodData(),
+    fetchPopulation(),
     fetchUsgsSeismicRisk(),
     fetchReliefwebDisasters(),
     fetchReliefwebEpidemics(),
@@ -254,6 +295,7 @@ async function runWeeklyUpdate() {
   const inform         = unwrap(informData,        'INFORM',          []);
   const conflictSrc    = unwrap(conflictRes,        'Conflict',        { source: null, map: new Map() });
   const food           = unwrap(foodRaw,            'WorldBank',       []);
+  const popRows        = unwrap(popRaw,             'Population',      []);
   const usgs           = unwrap(usgsRaw,            'USGS',            []);
   const reliefDisaster = unwrap(reliefDisastersRaw, 'ReliefWeb',       new Map());
   const reliefEpis     = unwrap(reliefEpisRaw,      'ReliefWeb-Epi',   new Map());
@@ -278,7 +320,7 @@ async function runWeeklyUpdate() {
     console.error('[cron] ⚠️  latest_risks lookup failed:', err.message);
   }
   const carry = {
-    conflict: failed.has('Conflict'),
+    conflict: failed.has('Conflict') || failed.has('Population'),
     food:     failed.has('WorldBank'),
     disaster: failed.has('INFORM'),
     seismic:  failed.has('INFORM'),
@@ -297,20 +339,22 @@ async function runWeeklyUpdate() {
     if (iso2 && row.country) nameToIso2.set(String(row.country).toLowerCase(), iso2);
   }
 
-  // Conflict: UCDP GED (or ACLED fallback) — decay-weighted fatalities
-  const conflictRaw = acled;
+  const population = wbToIso2Map(popRows);
+
+  // Conflict: decay-weighted fatalities → deaths per 100k/year
+  const conflictRate = conflictRateMap(acled, population);
 
   // Disaster: INFORM flood/cyclone/drought/tsunami (structural, absolute 0–100)
-  //         + ReliefWeb ongoing disasters (events, min-max normalised)
+  //         + ReliefWeb ongoing disasters (events)
   const disasterStruct = informNonSeismicMap(inform);
-  const disasterEvents = normalizeMapValues(reliefDisaster);
+  const disasterEvents = scaleMap(reliefDisaster, v => logAnchoredScale(v, DISASTER_EVENT_ANCHORS));
 
-  // Food: World Bank undernourishment
-  const foodRaw2 = foodToIso2Map(food);
+  // Food: World Bank undernourishment, % of population
+  const foodPct = wbToIso2Map(food);
 
   // Seismic: INFORM earthquake hazard (structural) + USGS last-30-days log energy
   const seismicStruct = informEarthquakeMap(inform);
-  const seismicEvents = normalizeMapValues(usgsToIso2Map(usgs));
+  const seismicEvents = scaleMap(usgsToIso2Map(usgs), v => anchoredScale(v, SEISMIC_EVENT_ANCHORS));
 
   // Pandemic: INFORM epidemic + WHO DON + ReliefWeb epidemics
   // (whoParser combines all three sources internally)
@@ -319,12 +363,12 @@ async function runWeeklyUpdate() {
     return new Map();
   });
 
-  // ── Step 3: Normalize each dimension to 0–100 ────────────────────────────
-  console.log('[cron] Step 3/5 — Normalizing dimensions…');
+  // ── Step 3: Map each dimension onto the absolute 0–100 scale ─────────────
+  console.log('[cron] Step 3/5 — Applying absolute scales…');
 
-  const conflict = normalizeMapValues(conflictRaw);
+  const conflict = scaleMap(conflictRate, v => logAnchoredScale(v, CONFLICT_ANCHORS));
   const disaster = blendMaps(disasterStruct, DISASTER_STRUCT_W, disasterEvents, DISASTER_EVENT_W);
-  const foodN    = normalizeMapValues(foodRaw2);
+  const foodN    = scaleMap(foodPct, v => anchoredScale(v, FOOD_ANCHORS));
   const seismic  = blendMaps(seismicStruct, SEISMIC_STRUCT_W, seismicEvents, SEISMIC_EVENT_W);
   const pandemic = pandemicRaw; // already 0–100 from whoParser
 
