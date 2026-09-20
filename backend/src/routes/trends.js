@@ -10,7 +10,8 @@ router.get('/:countryCode', async (req, res) => {
   try {
     const db = getDb();
     const { rows } = await db.query(
-      `SELECT measured_at AS date, conflict, disaster, food, seismic,
+      `SELECT measured_at AS date, conflict, COALESCE(crime, 0) AS crime,
+              disaster, food, seismic,
               COALESCE(pandemic, 0) AS pandemic, score
        FROM risks
        WHERE country_code = $1

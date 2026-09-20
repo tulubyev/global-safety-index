@@ -17,7 +17,8 @@ router.get('/', async (req, res) => {
     // previous formula rank consistently with the rest of the API.
     const { rows } = await db.query(
       `SELECT c.code, c.name, c.name_ru,
-              r.conflict::float, r.disaster::float, r.food::float, r.seismic::float,
+              r.conflict::float, COALESCE(r.crime, 0)::float AS crime,
+              r.disaster::float, r.food::float, r.seismic::float,
               COALESCE(r.pandemic, 0)::float AS pandemic,
               r.measured_at
        FROM latest_risks r
@@ -36,6 +37,7 @@ router.get('/', async (req, res) => {
         code:     row.code,
         score:    row.score.toFixed(1),
         conflict: row.conflict,
+        crime:    row.crime,
         disaster: row.disaster,
         food:     row.food,
         seismic:  row.seismic,

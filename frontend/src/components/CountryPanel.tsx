@@ -18,6 +18,7 @@ interface Props {
 interface CountryData {
   name:     string;
   conflict: number;
+  crime:    number;
   disaster: number;
   food:     number;
   seismic:  number;
@@ -84,6 +85,7 @@ export default function CountryPanel({ countryCode, weights, onClose }: Props) {
         setCountry({
           name:     p.name,
           conflict: Number(p.conflict) || 0,
+          crime:    Number(p.crime)    || 0,
           disaster: Number(p.disaster) || 0,
           food:     Number(p.food)     || 0,
           seismic:  Number(p.seismic)  || 0,
@@ -101,6 +103,7 @@ export default function CountryPanel({ countryCode, weights, onClose }: Props) {
   const chartData = (trendsData?.history || []).map((d: any) => ({
     date:     new Date(d.date).getFullYear(),
     conflict: Number(d.conflict) || 0,
+    crime:    Number(d.crime)    || 0,
     disaster: Number(d.disaster) || 0,
     food:     Number(d.food)     || 0,
     seismic:  Number(d.seismic)  || 0,
@@ -182,6 +185,7 @@ export default function CountryPanel({ countryCode, weights, onClose }: Props) {
                     />
                     <Legend iconSize={8} wrapperStyle={{ fontSize: 10 }} />
                     <Line type="monotone" dataKey="conflict" stroke="#dc2626" dot={false} strokeWidth={1.5} name="Conflict" />
+                    <Line type="monotone" dataKey="crime"    stroke="#be123c" dot={false} strokeWidth={1.5} name="Crime" />
                     <Line type="monotone" dataKey="disaster" stroke="#ea580c" dot={false} strokeWidth={1.5} name="Disaster" />
                     <Line type="monotone" dataKey="food"     stroke="#ca8a04" dot={false} strokeWidth={1.5} name="Food" />
                     <Line type="monotone" dataKey="pandemic" stroke="#0891b2" dot={false} strokeWidth={1.5} name="Pandemic" />

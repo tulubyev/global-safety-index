@@ -11,6 +11,7 @@
  *
  * Dimensions and their sources:
  *  conflict  — UCDP GED + candidate events, deaths per 100k/yr (2-yr half-life); ACLED fallback
+ *  crime     — UNODC intentional homicide rate per 100k (via World Bank)
  *  disaster  — INFORM flood/cyclone/drought/tsunami (70%) + ReliefWeb ongoing disasters (30%)
  *  food      — World Bank undernourishment % (most recent year)
  *  seismic   — INFORM earthquake hazard (80%) + USGS M4.5+ last 30 days, log energy (20%)
@@ -25,7 +26,8 @@ const { fetchAcledConflict }        = require('../parsers/acledParser');
 const { fetchUcdpConflict }         = require('../parsers/ucdpParser');
 const { fetchInformRisk }           = require('../parsers/informParser');
 const { fetchFoodData,
-        fetchPopulation }           = require('../parsers/worldBankParser');
+        fetchPopulation,
+        fetchHomicideRate }         = require('../parsers/worldBankParser');
 const { fetchUsgsSeismicRisk }      = require('../parsers/usgsParser');
 const { fetchReliefwebDisasters,
         fetchReliefwebEpidemics }   = require('../parsers/reliefwebParser');
@@ -58,6 +60,10 @@ const CONFLICT_DECAY_WINDOW    = CONFLICT_HALF_LIFE_YEARS / Math.LN2;  // ≈ 2.
 // magnitude is a step). 1/100k/yr ≈ a country in sustained low-level conflict,
 // 100/100k/yr ≈ full-scale war.
 const CONFLICT_ANCHORS = [[0.01, 0], [0.1, 25], [1, 50], [10, 75], [100, 100]];
+
+// Intentional homicides per 100k per year (UNODC via World Bank). Western
+// Europe sits near 1, the global average near 6, the worst countries near 50.
+const CRIME_ANCHORS = [[0.5, 0], [1, 15], [3, 35], [6, 50], [12, 70], [25, 85], [50, 100]];
 
 // Prevalence of undernourishment, % of population — FAO severity bands
 // (<2.5 % very low, 5–15 % moderate, 15–25 % high, >25 % very high).
@@ -270,6 +276,7 @@ async function runWeeklyUpdate() {
     conflictRes,
     foodRaw,
     popRaw,
+    homicideRaw,
     usgsRaw,
     reliefDisastersRaw,
     reliefEpisRaw,
@@ -278,6 +285,7 @@ async function runWeeklyUpdate() {
     fetchConflict(),
     fetchFoodData(),
     fetchPopulation(),
+    fetchHomicideRate(),
     fetchUsgsSeismicRisk(),
     fetchReliefwebDisasters(),
     fetchReliefwebEpidemics(),
@@ -296,6 +304,7 @@ async function runWeeklyUpdate() {
   const conflictSrc    = unwrap(conflictRes,        'Conflict',        { source: null, map: new Map() });
   const food           = unwrap(foodRaw,            'WorldBank',       []);
   const popRows        = unwrap(popRaw,             'Population',      []);
+  const homicideRows   = unwrap(homicideRaw,        'Homicide',        []);
   const usgs           = unwrap(usgsRaw,            'USGS',            []);
   const reliefDisaster = unwrap(reliefDisastersRaw, 'ReliefWeb',       new Map());
   const reliefEpis     = unwrap(reliefEpisRaw,      'ReliefWeb-Epi',   new Map());
@@ -313,7 +322,7 @@ async function runWeeklyUpdate() {
   const prev = new Map();
   try {
     const { rows } = await db.query(
-      'SELECT code, conflict, disaster, food, seismic, pandemic FROM latest_risks'
+      'SELECT code, conflict, crime, disaster, food, seismic, pandemic FROM latest_risks'
     );
     for (const r of rows) prev.set(r.code, r);
   } catch (err) {
@@ -321,6 +330,7 @@ async function runWeeklyUpdate() {
   }
   const carry = {
     conflict: failed.has('Conflict') || failed.has('Population'),
+    crime:    failed.has('Homicide'),
     food:     failed.has('WorldBank'),
     disaster: failed.has('INFORM'),
     seismic:  failed.has('INFORM'),
@@ -352,6 +362,9 @@ async function runWeeklyUpdate() {
   // Food: World Bank undernourishment, % of population
   const foodPct = wbToIso2Map(food);
 
+  // Crime: UNODC intentional homicide rate, already per 100k per year
+  const homicideRate = wbToIso2Map(homicideRows);
+
   // Seismic: INFORM earthquake hazard (structural) + USGS last-30-days log energy
   const seismicStruct = informEarthquakeMap(inform);
   const seismicEvents = scaleMap(usgsToIso2Map(usgs), v => anchoredScale(v, SEISMIC_EVENT_ANCHORS));
@@ -368,6 +381,7 @@ async function runWeeklyUpdate() {
 
   const conflict = scaleMap(conflictRate, v => logAnchoredScale(v, CONFLICT_ANCHORS));
   const disaster = blendMaps(disasterStruct, DISASTER_STRUCT_W, disasterEvents, DISASTER_EVENT_W);
+  const crime    = scaleMap(homicideRate, v => logAnchoredScale(v, CRIME_ANCHORS));
   const foodN    = scaleMap(foodPct, v => anchoredScale(v, FOOD_ANCHORS));
   const seismic  = blendMaps(seismicStruct, SEISMIC_STRUCT_W, seismicEvents, SEISMIC_EVENT_W);
   const pandemic = pandemicRaw; // already 0–100 from whoParser
@@ -378,6 +392,7 @@ async function runWeeklyUpdate() {
   // Union of all known countries across all dimensions
   const allCodes = new Set([
     ...conflict.keys(),
+    ...crime.keys(),
     ...disaster.keys(),
     ...foodN.keys(),
     ...seismic.keys(),
@@ -394,17 +409,19 @@ async function runWeeklyUpdate() {
       carry[dim] ? (Number(old[dim]) || 0) : (map.get(iso2) || 0);
 
     const c = pick('conflict', conflict);
+    const cr= pick('crime',    crime);
     const d = pick('disaster', disaster);
     const f = pick('food',     foodN);
     const s = pick('seismic',  seismic);
     const p = pick('pandemic', pandemic);
 
-    const dims  = { conflict: c, disaster: d, food: f, seismic: s, pandemic: p };
+    const dims  = { conflict: c, crime: cr, disaster: d, food: f, seismic: s, pandemic: p };
     const score = compositeScore(dims); // default weights, same formula as API
 
     rows.push({
       code:     iso2,
       conflict: Math.round(c * 100) / 100,
+      crime:    Math.round(cr * 100) / 100,
       disaster: Math.round(d * 100) / 100,
       food:     Math.round(f * 100) / 100,
       seismic:  Math.round(s * 100) / 100,
@@ -423,18 +440,19 @@ async function runWeeklyUpdate() {
     try {
       await db.query(
         `INSERT INTO risks
-           (country_code, measured_at, conflict, disaster, food, seismic, pandemic, score, source)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'weekly-cron')
+           (country_code, measured_at, conflict, crime, disaster, food, seismic, pandemic, score, source)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'weekly-cron')
          ON CONFLICT (country_code, measured_at)
          DO UPDATE SET
            conflict = EXCLUDED.conflict,
+           crime    = EXCLUDED.crime,
            disaster = EXCLUDED.disaster,
            food     = EXCLUDED.food,
            seismic  = EXCLUDED.seismic,
            pandemic = EXCLUDED.pandemic,
            score    = EXCLUDED.score,
            source   = EXCLUDED.source`,
-        [r.code, today, r.conflict, r.disaster, r.food, r.seismic, r.pandemic, r.score]
+        [r.code, today, r.conflict, r.crime, r.disaster, r.food, r.seismic, r.pandemic, r.score]
       );
       upserted++;
     } catch (err) {

@@ -17,7 +17,8 @@ router.get('/', async (req, res) => {
     const db = getDb();
     const { rows } = await db.query(
       `SELECT c.name, c.code, c.name_ru,
-              r.conflict::float, r.disaster::float, r.food::float, r.seismic::float,
+              r.conflict::float, COALESCE(r.crime, 0)::float AS crime,
+              r.disaster::float, r.food::float, r.seismic::float,
               COALESCE(r.pandemic, 0)::float AS pandemic, r.measured_at
        FROM countries c
        JOIN latest_risks r USING(code)
@@ -34,6 +35,7 @@ router.get('/', async (req, res) => {
       code:     row.code,
       score:    compositeScore(row).toFixed(1),
       conflict: row.conflict,
+      crime:    row.crime,
       disaster: row.disaster,
       food:     row.food,
       seismic:  row.seismic,

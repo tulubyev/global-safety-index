@@ -1,5 +1,6 @@
 export interface Weights {
   conflict: number;
+  crime:    number;
   disaster: number;
   food:     number;
   seismic:  number;
@@ -7,11 +8,12 @@ export interface Weights {
 }
 
 export const DEFAULT_WEIGHTS: Weights = {
-  conflict: 30,
-  disaster: 20,
-  food:     20,
+  conflict: 25,
+  crime:    20,
+  disaster: 15,
+  food:     15,
   seismic:  10,
-  pandemic: 20,
+  pandemic: 15,
 };
 
 export const WEIGHT_DIMS: {
@@ -27,6 +29,13 @@ export const WEIGHT_DIMS: {
     icon:  '⚔️',
     color: '#dc2626',
     desc:  'Fatalities from armed conflict (UCDP GED)',
+  },
+  {
+    key:   'crime',
+    label: 'Violent Crime',
+    icon:  '🔫',
+    color: '#be123c',
+    desc:  'Homicide rate per 100k (UNODC)',
   },
   {
     key:   'disaster',

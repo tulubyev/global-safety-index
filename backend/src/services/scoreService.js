@@ -4,6 +4,7 @@
  *
  * Every route (map, custom-weights, top10, safety) and the weekly cron must
  * go through this module so a given country shows the same number everywhere.
+ * Adding a dimension here propagates it to every consumer.
  *
  *   raw   = Σ wᵢ · dimᵢ            (weights normalised to sum 1, dims 0–100)
  *   score = √(raw / 100) · 100      (absolute, 0–100 — NOT relative to other countries)
@@ -12,14 +13,15 @@
  * distinguishable instead of being crushed against zero by a few extreme ones.
  */
 
-const DIMENSIONS = ['conflict', 'disaster', 'food', 'seismic', 'pandemic'];
+const DIMENSIONS = ['conflict', 'crime', 'disaster', 'food', 'seismic', 'pandemic'];
 
 const DEFAULT_WEIGHTS = Object.freeze({
-  conflict: 0.30,
-  disaster: 0.20,
-  food:     0.20,
+  conflict: 0.25,
+  crime:    0.20,
+  disaster: 0.15,
+  food:     0.15,
   seismic:  0.10,
-  pandemic: 0.20,
+  pandemic: 0.15,
 });
 
 /** Normalise an arbitrary non-negative weight object so the values sum to 1. */

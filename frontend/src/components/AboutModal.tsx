@@ -22,8 +22,13 @@ const SOURCES = [
   },
   {
     name: 'World Bank — Food Security',
-    desc: 'Prevalence of undernourishment and food insecurity indicators',
-    url:  'https://data.worldbank.org/topic/agriculture-and-rural-development',
+    desc: 'Prevalence of undernourishment (SN.ITK.DEFC.ZS), scaled against FAO severity bands',
+    url:  'https://data.worldbank.org/indicator/SN.ITK.DEFC.ZS',
+  },
+  {
+    name: 'UNODC — Intentional Homicide',
+    desc: 'Homicides per 100,000 people, UN Office on Drugs and Crime (via World Bank VC.IHR.PSRC.P5)',
+    url:  'https://dataunodc.un.org/dp-intentional-homicide-victims',
   },
   {
     name: 'USGS — Earthquake Feed',
@@ -93,10 +98,10 @@ export default function AboutModal({ onClose }: Props) {
           <p style={{ fontSize: 13, lineHeight: 1.7, color: '#4b5563', margin: '10px 0 0' }}>
             Whether you are planning international travel, conducting research, or making
             decisions that depend on regional security — our index lets you quickly evaluate
-            risk across five dimensions: <strong>armed conflict</strong>, <strong>natural
-            disasters</strong>, <strong>food security</strong>, <strong>seismic
-            activity</strong>, and <strong>pandemic risk</strong>. Each dimension can be
-            weighted according to your own priorities using the sliders on the left panel.
+            risk across six dimensions: <strong>armed conflict</strong>, <strong>violent
+            crime</strong>, <strong>natural disasters</strong>, <strong>food security</strong>,
+            <strong> seismic activity</strong>, and <strong>pandemic risk</strong>. Each dimension
+            can be weighted according to your own priorities using the sliders on the left panel.
           </p>
         </section>
 
@@ -117,8 +122,9 @@ export default function AboutModal({ onClose }: Props) {
             Index Formula
           </h3>
           <p style={{ fontSize: 12, lineHeight: 1.6, color: '#4b5563', marginBottom: 10 }}>
-            The composite risk score is calculated as a weighted sum of five normalised dimensions.
-            Default weights reflect expert consensus but can be adjusted by the user:
+            The composite risk score is a weighted sum of six dimensions, each mapped to 0–100
+            against fixed real-world anchors rather than relative to the other countries.
+            Default weights can be adjusted by the user:
           </p>
 
           {/* Formula block */}
@@ -129,23 +135,25 @@ export default function AboutModal({ onClose }: Props) {
           }}>
             <div style={{ color: '#64748b', marginBottom: 4, fontFamily: 'sans-serif', fontSize: 11 }}>Score (0–100)</div>
             <div>= <span style={{ color: '#dc2626' }}>w₁</span> × Conflict</div>
-            <div>+ <span style={{ color: '#ea580c' }}>w₂</span> × Disaster</div>
-            <div>+ <span style={{ color: '#ca8a04' }}>w₃</span> × Food Security</div>
-            <div>+ <span style={{ color: '#7c3aed' }}>w₄</span> × Seismic</div>
-            <div>+ <span style={{ color: '#0891b2' }}>w₅</span> × Pandemic Risk</div>
+            <div>+ <span style={{ color: '#be123c' }}>w₂</span> × Violent Crime</div>
+            <div>+ <span style={{ color: '#ea580c' }}>w₃</span> × Disaster</div>
+            <div>+ <span style={{ color: '#ca8a04' }}>w₄</span> × Food Security</div>
+            <div>+ <span style={{ color: '#7c3aed' }}>w₅</span> × Seismic</div>
+            <div>+ <span style={{ color: '#0891b2' }}>w₆</span> × Pandemic Risk</div>
             <div style={{ marginTop: 6, paddingTop: 6, borderTop: '1px solid #e2e8f0', color: '#64748b' }}>
-              w₁+w₂+w₃+w₄+w₅ = 100%
+              w₁+…+w₆ = 100%, then score = √(sum / 100) × 100
             </div>
           </div>
 
           {/* Default weights table */}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
             {[
-              { icon: '⚔️', label: 'Armed Conflict',   w: '30%', color: '#dc2626', src: 'UCDP' },
-              { icon: '🌪️', label: 'Natural Disaster',  w: '20%', color: '#ea580c', src: 'INFORM, ReliefWeb' },
-              { icon: '🌾', label: 'Food Security',     w: '20%', color: '#ca8a04', src: 'World Bank' },
+              { icon: '⚔️', label: 'Armed Conflict',   w: '25%', color: '#dc2626', src: 'UCDP' },
+              { icon: '🔫', label: 'Violent Crime',     w: '20%', color: '#be123c', src: 'UNODC' },
+              { icon: '🌪️', label: 'Natural Disaster',  w: '15%', color: '#ea580c', src: 'INFORM, ReliefWeb' },
+              { icon: '🌾', label: 'Food Security',     w: '15%', color: '#ca8a04', src: 'World Bank' },
               { icon: '🔴', label: 'Seismic Activity',  w: '10%', color: '#7c3aed', src: 'INFORM, USGS' },
-              { icon: '🦠', label: 'Pandemic Risk',     w: '20%', color: '#0891b2', src: 'INFORM, WHO, ReliefWeb' },
+              { icon: '🦠', label: 'Pandemic Risk',     w: '15%', color: '#0891b2', src: 'INFORM, WHO, ReliefWeb' },
             ].map(d => (
               <div key={d.label} style={{
                 background: '#fff', border: `1px solid ${d.color}33`,
@@ -164,8 +172,9 @@ export default function AboutModal({ onClose }: Props) {
           </div>
 
           <p style={{ fontSize: 11, color: '#94a3b8', marginTop: 10, lineHeight: 1.5 }}>
-            All dimensions are normalised to 0–100 before weighting; the final score is
-            √(weighted sum / 100) × 100 so that low-risk countries remain distinguishable.
+            Scores are absolute: a country's value does not change when other countries
+            do, so rankings stay comparable over time. Conflict and crime are measured
+            per 100,000 people, not as raw counts.
             The formula and weights are open for public discussion — contact us if you
             have suggestions for improving the methodology.
           </p>

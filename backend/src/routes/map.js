@@ -6,6 +6,7 @@ const { compositeScore } = require('../services/scoreService');
 
 const DIM_SELECT = `
   COALESCE(r.conflict, 0)::float AS conflict,
+  COALESCE(r.crime,    0)::float AS crime,
   COALESCE(r.disaster, 0)::float AS disaster,
   COALESCE(r.food,     0)::float AS food,
   COALESCE(r.seismic,  0)::float AS seismic,
@@ -14,8 +15,8 @@ const DIM_SELECT = `
 
 function toProperties(row) {
   const dims = {
-    conflict: row.conflict, disaster: row.disaster, food: row.food,
-    seismic:  row.seismic,  pandemic: row.pandemic,
+    conflict: row.conflict, crime:    row.crime, disaster: row.disaster,
+    food:     row.food,     seismic:  row.seismic, pandemic: row.pandemic,
   };
   return {
     code:     row.code,
@@ -25,6 +26,7 @@ function toProperties(row) {
     // The client re-scores with user weights using the same formula.
     score:    row.has_data ? compositeScore(dims).toFixed(1) : null,
     conflict: dims.conflict.toFixed(1),
+    crime:    dims.crime.toFixed(1),
     disaster: dims.disaster.toFixed(1),
     food:     dims.food.toFixed(1),
     seismic:  dims.seismic.toFixed(1),
