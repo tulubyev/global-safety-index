@@ -27,9 +27,14 @@ export default function AppContent() {
           <button
             onClick={() => setShowAbout(true)}
             style={{
-              display: 'block', width: '100%',
+              // Height pinned to what the two-line banner already occupied, so
+              // the call to action fits inside it instead of pushing the
+              // sliders down; the lines are centred in the fixed box.
+              height: 66, boxSizing: 'border-box',
+              display: 'flex', flexDirection: 'column', justifyContent: 'center',
+              width: '100%',
               background: 'linear-gradient(135deg, #1e3a5f 0%, #1d4ed8 100%)',
-              border: 'none', borderRadius: 10, padding: '14px 16px',
+              border: 'none', borderRadius: 10, padding: '6px 16px',
               cursor: 'pointer', marginBottom: 16, textAlign: 'left',
               boxShadow: '0 2px 8px rgba(29,78,216,0.3)',
               transition: 'opacity 0.15s',
@@ -37,11 +42,14 @@ export default function AppContent() {
             onMouseEnter={e => (e.currentTarget.style.opacity = '0.9')}
             onMouseLeave={e => (e.currentTarget.style.opacity = '1')}
           >
-            <div style={{ fontSize: 16, fontWeight: 800, color: '#fff', letterSpacing: 0.3 }}>
+            <div style={{ fontSize: 16, fontWeight: 800, color: '#fff', letterSpacing: 0.3, lineHeight: 1.2 }}>
               🌍 World Safety Index 2026
             </div>
-            <div style={{ fontSize: 11, color: '#93c5fd', marginTop: 4, fontWeight: 500, textAlign: 'center' }}>
+            <div style={{ fontSize: 11, color: '#93c5fd', marginTop: 2, fontWeight: 500, textAlign: 'center', lineHeight: 1.2 }}>
               Actual Data for Your Security
+            </div>
+            <div style={{ fontSize: 10, color: '#bfdbfe', marginTop: 1, fontWeight: 600, textAlign: 'center', lineHeight: 1.2 }}>
+              Click to get information
             </div>
           </button>
           <WeightSliders weights={weights} onChange={setWeights} />
