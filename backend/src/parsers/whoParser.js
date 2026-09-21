@@ -301,12 +301,10 @@ async function fetchPandemicRisk(informData, reliefwebEpi, nameToIso2) {
   const informNorm  = informRaw;
   const reliefNorm  = scaleMap(reliefwebEpi, v => logAnchoredScale(v, RELIEF_EPI_ANCHORS));
 
-  // 4. Combine: collect all known iso2 codes
-  const allCodes = new Set([
-    ...whoNorm.keys(),
-    ...informNorm.keys(),
-    ...reliefNorm.keys(),
-  ]);
+  // 4. Keyed on INFORM, the structural backbone: a country it does not cover
+  //    has no epidemic-vulnerability assessment, and outbreak feeds alone
+  //    cannot stand in for one. Absence from the feeds is a zero.
+  const allCodes = new Set(informNorm.keys());
 
   const result = new Map();
   for (const iso2 of allCodes) {

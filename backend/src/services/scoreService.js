@@ -6,11 +6,17 @@
  * go through this module so a given country shows the same number everywhere.
  * Adding a dimension here propagates it to every consumer.
  *
- *   raw   = Σ wᵢ · dimᵢ            (weights normalised to sum 1, dims 0–100)
+ *   raw   = Σ wᵢ · dimᵢ / Σ wᵢ     (over the dimensions that have data)
  *   score = √(raw / 100) · 100      (absolute, 0–100 — NOT relative to other countries)
  *
  * The square root spreads out the low end so that "quiet" countries are still
  * distinguishable instead of being crushed against zero by a few extreme ones.
+ *
+ * A dimension may be null: "we have no data", which is not the same as a
+ * measured zero. Null dimensions are dropped and the remaining weights are
+ * renormalised, so missing data neither inflates nor deflates the score — it
+ * only makes it less well supported. Callers should surface `coverage()`
+ * alongside the score so that is visible.
  */
 
 const DIMENSIONS = ['conflict', 'crime', 'disaster', 'food', 'seismic', 'pandemic'];
@@ -38,12 +44,31 @@ function normalizeWeights(weights = DEFAULT_WEIGHTS) {
   return w;
 }
 
-/** Weighted linear combination of the five dimensions (0–100). */
+/** True when a dimension carries a real measurement — including a measured 0. */
+function hasValue(v) {
+  return v !== null && v !== undefined && v !== '' && Number.isFinite(Number(v));
+}
+
+/** How many of the dimensions actually have data. */
+function coverage(dims) {
+  return DIMENSIONS.filter(d => hasValue(dims[d])).length;
+}
+
+/**
+ * Weighted mean of the dimensions that have data (0–100).
+ * With full coverage the weights already sum to 1 and this is a plain
+ * weighted sum; with gaps it renormalises over what is present.
+ */
 function rawScore(dims, weights = DEFAULT_WEIGHTS) {
   const w = normalizeWeights(weights);
-  let raw = 0;
-  for (const d of DIMENSIONS) raw += w[d] * (Number(dims[d]) || 0);
-  return Math.min(100, Math.max(0, raw));
+  let sum = 0, wsum = 0;
+  for (const d of DIMENSIONS) {
+    if (!hasValue(dims[d])) continue;
+    sum  += w[d] * Number(dims[d]);
+    wsum += w[d];
+  }
+  if (wsum === 0) return 0;
+  return Math.min(100, Math.max(0, sum / wsum));
 }
 
 /** Absolute 0–100 composite score from a raw weighted value. */
@@ -59,6 +84,8 @@ function compositeScore(dims, weights = DEFAULT_WEIGHTS) {
 
 module.exports = {
   DIMENSIONS,
+  hasValue,
+  coverage,
   DEFAULT_WEIGHTS,
   normalizeWeights,
   rawScore,

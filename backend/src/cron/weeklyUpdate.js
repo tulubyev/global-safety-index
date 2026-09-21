@@ -46,7 +46,8 @@ const {
 } = require('./dimensions');
 const { getDb }                     = require('../services/dbService');
 const cacheService                  = require('../services/cacheService');
-const { compositeScore }            = require('../services/scoreService');
+const { compositeScore, coverage,
+        DIMENSIONS }                = require('../services/scoreService');
 
 // ── Main pipeline ─────────────────────────────────────────────────────────────
 
@@ -226,11 +227,17 @@ async function runWeeklyUpdate() {
 
   console.log(`[cron] Countries with data: ${allCodes.size}`);
 
+  const round2 = v => (v === null ? null : Math.round(v * 100) / 100);
+
   const rows = [];
   for (const iso2 of allCodes) {
     const old = prev.get(iso2) || {};
-    const pick = (dim, map) =>
-      carry[dim] ? (Number(old[dim]) || 0) : (map.get(iso2) || 0);
+    // null = no data for this dimension. Distinct from a measured 0, which a
+    // country legitimately gets when e.g. it recorded no conflict deaths.
+    const pick = (dim, map) => {
+      const v = carry[dim] ? old[dim] : (map.has(iso2) ? map.get(iso2) : null);
+      return v === null || v === undefined ? null : Number(v);
+    };
 
     const c = pick('conflict', conflict);
     const cr= pick('crime',    crime);
@@ -244,13 +251,14 @@ async function runWeeklyUpdate() {
 
     rows.push({
       code:     iso2,
-      conflict: Math.round(c * 100) / 100,
-      crime:    Math.round(cr * 100) / 100,
-      disaster: Math.round(d * 100) / 100,
-      food:     Math.round(f * 100) / 100,
-      seismic:  Math.round(s * 100) / 100,
-      pandemic: Math.round(p * 100) / 100,
+      conflict: round2(c),
+      crime:    round2(cr),
+      disaster: round2(d),
+      food:     round2(f),
+      seismic:  round2(s),
+      pandemic: round2(p),
       score:    Math.round(score * 100) / 100,
+      coverage: coverage(dims),
     });
   }
 
@@ -287,6 +295,11 @@ async function runWeeklyUpdate() {
   }
 
   console.log(`[cron] Upserted: ${upserted}, skipped (no country row): ${skipped}`);
+
+  const full = rows.filter(r => r.coverage === DIMENSIONS.length).length;
+  const thin = rows.filter(r => r.coverage < 3).length;
+  console.log(`[cron] Coverage: ${full} countries with all ${DIMENSIONS.length} dimensions, `
+            + `${thin} with fewer than 3`);
 
   // Flush cache so map/top10 serve fresh data
   await Promise.allSettled([

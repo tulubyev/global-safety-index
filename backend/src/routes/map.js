@@ -2,36 +2,31 @@ const express = require('express');
 const router = express.Router();
 const { getDb } = require('../services/dbService');
 const cacheService = require('../services/cacheService');
-const { compositeScore } = require('../services/scoreService');
+const { compositeScore, coverage, hasValue, DIMENSIONS } = require('../services/scoreService');
 
-const DIM_SELECT = `
-  COALESCE(r.conflict, 0)::float AS conflict,
-  COALESCE(r.crime,    0)::float AS crime,
-  COALESCE(r.disaster, 0)::float AS disaster,
-  COALESCE(r.food,     0)::float AS food,
-  COALESCE(r.seismic,  0)::float AS seismic,
-  COALESCE(r.pandemic, 0)::float AS pandemic,
-  (r.code IS NOT NULL)           AS has_data`;
+// NULL is preserved rather than coalesced to 0: "no data" must not read as
+// "measured zero", which would make an unmeasured country look safe.
+const DIM_SELECT = DIMENSIONS.map(d => `  r.${d}::float AS ${d}`).join(',\n')
+                 + ',\n  (r.code IS NOT NULL) AS has_data';
 
 function toProperties(row) {
-  const dims = {
-    conflict: row.conflict, crime:    row.crime, disaster: row.disaster,
-    food:     row.food,     seismic:  row.seismic, pandemic: row.pandemic,
+  const dims = Object.fromEntries(DIMENSIONS.map(d => [d, row[d]]));
+  const n    = coverage(dims);
+
+  const props = {
+    code:      row.code,
+    name:      row.name,
+    has_data:  row.has_data && n > 0,
+    coverage:  n,
+    dimensions: DIMENSIONS.length,
+    // Absolute 0–100 with default weights — identical formula to
+    // /api/custom-weights. The client re-scores with user weights.
+    score:     n > 0 ? compositeScore(dims).toFixed(1) : null,
   };
-  return {
-    code:     row.code,
-    name:     row.name,
-    has_data: row.has_data,
-    // Absolute 0–100 with default weights — identical formula to /api/custom-weights.
-    // The client re-scores with user weights using the same formula.
-    score:    row.has_data ? compositeScore(dims).toFixed(1) : null,
-    conflict: dims.conflict.toFixed(1),
-    crime:    dims.crime.toFixed(1),
-    disaster: dims.disaster.toFixed(1),
-    food:     dims.food.toFixed(1),
-    seismic:  dims.seismic.toFixed(1),
-    pandemic: dims.pandemic.toFixed(1),
-  };
+  for (const d of DIMENSIONS) {
+    props[d] = hasValue(dims[d]) ? Number(dims[d]).toFixed(1) : null;
+  }
+  return props;
 }
 
 // GET /api/map/all — FeatureCollection for choropleth

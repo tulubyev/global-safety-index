@@ -3,6 +3,7 @@ const test = require('node:test');
 const assert = require('node:assert');
 const {
   DIMENSIONS, DEFAULT_WEIGHTS, normalizeWeights, rawScore, scoreFromRaw, compositeScore,
+  hasValue, coverage,
 } = require('../src/services/scoreService');
 
 const sum = o => Object.values(o).reduce((a, b) => a + b, 0);
@@ -39,9 +40,35 @@ test('rawScore stays inside 0..100 and ignores unknown keys', () => {
   assert.strictEqual(rawScore({ ...all100, nonsense: 1e6 }), 100);
 });
 
-test('a missing dimension counts as zero, not as absent', () => {
+test('a missing dimension is dropped and the rest reweighted, not treated as zero', () => {
   const w = { conflict: 50, crime: 50, disaster: 0, food: 0, seismic: 0, pandemic: 0 };
-  assert.strictEqual(rawScore({ conflict: 100 }, w), 50);
+  // crime unknown -> score rests entirely on conflict
+  assert.strictEqual(rawScore({ conflict: 100 }, w), 100);
+  // crime measured at 0 -> it counts, and drags the mean down
+  assert.strictEqual(rawScore({ conflict: 100, crime: 0 }, w), 50);
+});
+
+test('a measured zero is not the same as no data', () => {
+  assert.strictEqual(hasValue(0), true);
+  assert.strictEqual(hasValue('0.0'), true);
+  for (const v of [null, undefined, '', NaN, 'n/a']) assert.strictEqual(hasValue(v), false);
+});
+
+test('coverage counts dimensions that carry a measurement', () => {
+  assert.strictEqual(coverage({}), 0);
+  assert.strictEqual(coverage({ conflict: 0, crime: null }), 1);
+  assert.strictEqual(coverage(Object.fromEntries(DIMENSIONS.map(d => [d, 5]))), DIMENSIONS.length);
+});
+
+test('missing data neither inflates nor deflates the score', () => {
+  const partial = { conflict: 40, crime: 40 };
+  const full    = Object.fromEntries(DIMENSIONS.map(d => [d, 40]));
+  assert.ok(Math.abs(rawScore(partial) - rawScore(full)) < 1e-9,
+    'same values, fewer dimensions: the score must not move');
+});
+
+test('no data at all scores zero rather than throwing', () => {
+  assert.strictEqual(rawScore({ conflict: null, crime: undefined }), 0);
 });
 
 test('compositeScore equals scoreFromRaw(rawScore)', () => {

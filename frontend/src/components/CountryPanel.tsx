@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useTrends } from '@/hooks/useSafetyScore';
 import { Weights, WEIGHT_DIMS } from '@/types/weights';
-import { compositeScore } from '@/lib/score';
+import { compositeScore, coverage, hasValue, DIMENSION_COUNT } from '@/lib/score';
 import {
   LineChart, Line, XAxis, YAxis, Tooltip,
   ResponsiveContainer, ReferenceLine, Legend,
@@ -15,37 +15,59 @@ interface Props {
   onClose:     () => void;
 }
 
+type Dim = number | null;
+
 interface CountryData {
   name:     string;
-  conflict: number;
-  crime:    number;
-  disaster: number;
-  food:     number;
-  seismic:  number;
-  pandemic: number;
+  conflict: Dim;
+  crime:    Dim;
+  disaster: Dim;
+  food:     Dim;
+  seismic:  Dim;
+  pandemic: Dim;
+}
+
+/** Preserve "no data" instead of turning it into a misleading zero. */
+function toDim(v: unknown): Dim {
+  return hasValue(v) ? Number(v) : null;
 }
 
 const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
 
 /** Horizontal score bar */
 function DimBar({ label, icon, color, value, desc }: {
-  label: string; icon: string; color: string; value: number; desc: string;
+  label: string; icon: string; color: string; value: number | null; desc: string;
 }) {
-  const pct = Math.min(100, Math.max(0, Number(value) || 0));
+  const missing = value === null;
+  const pct = missing ? 0 : Math.min(100, Math.max(0, value));
   return (
-    <div style={{ marginBottom: 10 }}>
+    <div style={{ marginBottom: 10, opacity: missing ? 0.55 : 1 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 3 }}>
         <span style={{ fontSize: 11, fontWeight: 600, color: '#374151' }}>{icon} {label}</span>
-        <span style={{ fontSize: 11, fontWeight: 700, color }}>{pct.toFixed(1)}</span>
+        <span
+          style={{ fontSize: 11, fontWeight: 700, color: missing ? '#9ca3af' : color }}
+          title={missing ? 'No data from this source for this country' : undefined}
+        >
+          {missing ? '—' : pct.toFixed(1)}
+        </span>
       </div>
-      <div style={{ background: '#f3f4f6', borderRadius: 4, height: 7, overflow: 'hidden' }}>
-        <div style={{
-          width: `${pct}%`, height: '100%', borderRadius: 4,
-          background: `linear-gradient(to right, ${color}88, ${color})`,
-          transition: 'width 0.4s ease',
-        }} />
+      <div style={{
+        background: '#f3f4f6', borderRadius: 4, height: 7, overflow: 'hidden',
+        backgroundImage: missing
+          ? 'repeating-linear-gradient(45deg, #f3f4f6, #f3f4f6 3px, #e5e7eb 3px, #e5e7eb 6px)'
+          : undefined,
+      }}>
+        {!missing && (
+          <div style={{
+            width: `${pct}%`, height: '100%', borderRadius: 4,
+            background: `linear-gradient(to right, ${color}88, ${color})`,
+            transition: 'width 0.4s ease',
+          }} />
+        )}
       </div>
-      <div style={{ fontSize: 10, color: '#9ca3af', marginTop: 1 }}>{desc}</div>
+      <div style={{ fontSize: 10, color: '#9ca3af', marginTop: 1 }}>
+        {missing ? 'no data' : desc}
+      </div>
     </div>
   );
 }
@@ -84,12 +106,12 @@ export default function CountryPanel({ countryCode, weights, onClose }: Props) {
         const p = d.properties;
         setCountry({
           name:     p.name,
-          conflict: Number(p.conflict) || 0,
-          crime:    Number(p.crime)    || 0,
-          disaster: Number(p.disaster) || 0,
-          food:     Number(p.food)     || 0,
-          seismic:  Number(p.seismic)  || 0,
-          pandemic: Number(p.pandemic) || 0,
+          conflict: toDim(p.conflict),
+          crime:    toDim(p.crime),
+          disaster: toDim(p.disaster),
+          food:     toDim(p.food),
+          seismic:  toDim(p.seismic),
+          pandemic: toDim(p.pandemic),
         });
         setLoading(false);
       })
@@ -151,9 +173,33 @@ export default function CountryPanel({ countryCode, weights, onClose }: Props) {
             {/* Overall score */}
             <ScoreGauge score={weightedScore} />
 
-            <div style={{ fontSize: 10, color: '#9ca3af', textAlign: 'center', marginTop: -8, marginBottom: 14 }}>
+            <div style={{ fontSize: 10, color: '#9ca3af', textAlign: 'center', marginTop: -8, marginBottom: 10 }}>
               based on current slider weights
             </div>
+
+            {/* Source coverage — a score from half the dimensions is not the
+                same claim as one from all six, and the user should see that. */}
+            {country && (() => {
+              const n = coverage(country);
+              const partial = n < DIMENSION_COUNT;
+              return (
+                <div style={{ textAlign: 'center', marginBottom: 14 }}>
+                  <span
+                    title={partial
+                      ? 'Dimensions without data are excluded and the remaining weights rescaled'
+                      : 'All dimensions have data for this country'}
+                    style={{
+                      display: 'inline-block', padding: '2px 9px', borderRadius: 10,
+                      fontSize: 10, fontWeight: 600,
+                      background: partial ? '#fef3c7' : '#dcfce7',
+                      color:      partial ? '#92400e' : '#166534',
+                    }}
+                  >
+                    {partial ? '◐' : '●'} data from {n} of {DIMENSION_COUNT} sources
+                  </span>
+                </div>
+              );
+            })()}
 
             {/* Dimension bars */}
             <div style={{ borderTop: '1px solid #f3f4f6', paddingTop: 12 }}>
@@ -163,7 +209,7 @@ export default function CountryPanel({ countryCode, weights, onClose }: Props) {
                   label={dim.label}
                   icon={dim.icon}
                   color={dim.color}
-                  value={country?.[dim.key] ?? 0}
+                  value={country ? country[dim.key] : null}
                   desc={dim.desc}
                 />
               ))}

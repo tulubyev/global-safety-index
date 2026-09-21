@@ -50,7 +50,10 @@ export default function SafetyMap({ weights, onCountryClick }: Props) {
       const score = compositeScore(p, weights);
       layer.setStyle({ fillColor: scoreToColor(score) });
       p._score = score.toFixed(1);
-      layer.setTooltipContent(`${p.name}: ${score.toFixed(1)}`);
+      const partial = typeof p.coverage === 'number' && typeof p.dimensions === 'number'
+        && p.coverage < p.dimensions
+        ? ` (${p.coverage}/${p.dimensions} sources)` : '';
+      layer.setTooltipContent(`${p.name}: ${score.toFixed(1)}${partial}`);
     });
   }, [weights, geoData]);
 
@@ -85,9 +88,13 @@ export default function SafetyMap({ weights, onCountryClick }: Props) {
             })}
             onEachFeature={(feature, layer) => {
               layer.on('click', () => onCountryClick(feature.properties.code));
-              const s = feature.properties.score;
+              const fp = feature.properties;
+              const s  = fp.score;
+              const partial = typeof fp.coverage === 'number' && typeof fp.dimensions === 'number'
+                && fp.coverage < fp.dimensions
+                ? ` (${fp.coverage}/${fp.dimensions} sources)` : '';
               layer.bindTooltip(
-                `${feature.properties.name}: ${s == null ? 'no data' : Number(s).toFixed(1)}`,
+                `${fp.name}: ${s == null ? 'no data' : Number(s).toFixed(1) + partial}`,
                 { sticky: true }
               );
             }}

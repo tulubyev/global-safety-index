@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { getDb } = require('../services/dbService');
 const cacheService = require('../services/cacheService');
-const { compositeScore, DEFAULT_WEIGHTS } = require('../services/scoreService');
+const { compositeScore, coverage, DEFAULT_WEIGHTS, DIMENSIONS } = require('../services/scoreService');
 
 // GET /api/safety?lat=&lon=
 router.get('/', async (req, res) => {
@@ -17,9 +17,7 @@ router.get('/', async (req, res) => {
     const db = getDb();
     const { rows } = await db.query(
       `SELECT c.name, c.code, c.name_ru,
-              r.conflict::float, COALESCE(r.crime, 0)::float AS crime,
-              r.disaster::float, r.food::float, r.seismic::float,
-              COALESCE(r.pandemic, 0)::float AS pandemic, r.measured_at
+              ${DIMENSIONS.map(d => `r.${d}::float AS ${d}`).join(', ')}, r.measured_at
        FROM countries c
        JOIN latest_risks r USING(code)
        WHERE ST_Contains(c.geom, ST_SetSRID(ST_MakePoint($1, $2), 4326))
@@ -33,14 +31,11 @@ router.get('/', async (req, res) => {
     const result = {
       country:  row.name,
       code:     row.code,
-      score:    compositeScore(row).toFixed(1),
-      conflict: row.conflict,
-      crime:    row.crime,
-      disaster: row.disaster,
-      food:     row.food,
-      seismic:  row.seismic,
-      pandemic: row.pandemic,
-      weights:  DEFAULT_WEIGHTS,
+      score:      compositeScore(row).toFixed(1),
+      coverage:   coverage(row),
+      dimensions: DIMENSIONS.length,
+      ...Object.fromEntries(DIMENSIONS.map(d => [d, row[d]])),
+      weights:    DEFAULT_WEIGHTS,
       measured_at: row.measured_at,
     };
 

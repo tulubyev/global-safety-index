@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { getDb } = require('../services/dbService');
 const cacheService = require('../services/cacheService');
-const { compositeScore, DEFAULT_WEIGHTS } = require('../services/scoreService');
+const { compositeScore, coverage, DEFAULT_WEIGHTS, DIMENSIONS } = require('../services/scoreService');
 
 // GET /api/top10?n=10
 router.get('/', async (req, res) => {
@@ -17,16 +17,15 @@ router.get('/', async (req, res) => {
     // previous formula rank consistently with the rest of the API.
     const { rows } = await db.query(
       `SELECT c.code, c.name, c.name_ru,
-              r.conflict::float, COALESCE(r.crime, 0)::float AS crime,
-              r.disaster::float, r.food::float, r.seismic::float,
-              COALESCE(r.pandemic, 0)::float AS pandemic,
+              ${DIMENSIONS.map(d => `r.${d}::float AS ${d}`).join(', ')},
               r.measured_at
        FROM latest_risks r
        JOIN countries c USING(code)`
     );
 
     const scored = rows
-      .map(row => ({ ...row, score: compositeScore(row) }))
+      .filter(row => coverage(row) >= 3)
+      .map(row => ({ ...row, score: compositeScore(row), cov: coverage(row) }))
       .sort((a, b) => a.score - b.score)
       .slice(0, n);
 
@@ -35,13 +34,10 @@ router.get('/', async (req, res) => {
         rank:     i + 1,
         country:  row.name,
         code:     row.code,
-        score:    row.score.toFixed(1),
-        conflict: row.conflict,
-        crime:    row.crime,
-        disaster: row.disaster,
-        food:     row.food,
-        seismic:  row.seismic,
-        pandemic: row.pandemic,
+        score:      row.score.toFixed(1),
+        coverage:   row.cov,
+        dimensions: DIMENSIONS.length,
+        ...Object.fromEntries(DIMENSIONS.map(d => [d, row[d]])),
       })),
       weights: DEFAULT_WEIGHTS,
       updated_at: new Date().toISOString(),

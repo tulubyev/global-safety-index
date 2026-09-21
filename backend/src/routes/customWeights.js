@@ -2,8 +2,11 @@ const express = require('express');
 const router  = express.Router();
 const { getDb } = require('../services/dbService');
 const {
-  DIMENSIONS, normalizeWeights, rawScore, scoreFromRaw,
+  DIMENSIONS, normalizeWeights, rawScore, scoreFromRaw, coverage, hasValue,
 } = require('../services/scoreService');
+
+// Below this many known dimensions a country is not comparable to the rest
+const MIN_COVERAGE = 3;
 
 // Non-sovereign territories: not covered by INFORM / World Bank / UCDP as
 // separate entities, so most dimensions are 0 and they would rank as the
@@ -49,12 +52,7 @@ router.post('/', async (req, res) => {
     // formula as the map, the country panel and the weekly cron.
     const { rows } = await db.query(
       `SELECT c.code, c.name,
-              COALESCE(r.conflict, 0)::float AS conflict,
-              COALESCE(r.crime,    0)::float AS crime,
-              COALESCE(r.disaster, 0)::float AS disaster,
-              COALESCE(r.food,     0)::float AS food,
-              COALESCE(r.seismic,  0)::float AS seismic,
-              COALESCE(r.pandemic, 0)::float AS pandemic
+              ${DIMENSIONS.map(d => `r.${d}::float AS ${d}`).join(', ')}
        FROM latest_risks r
        JOIN countries c USING(code)
        WHERE c.code != ALL($1::text[])`,
@@ -64,18 +62,23 @@ router.post('/', async (req, res) => {
     if (!rows.length) return res.json({ data: [], weights: w });
 
     const scored = rows
+      // A country we know almost nothing about cannot be ranked against one we
+      // do: with a single dimension the renormalised score rests entirely on it.
+      .filter(row => coverage(row) >= MIN_COVERAGE)
       .map(row => ({ row, raw: rawScore(row, w) }))
       .sort((a, b) => a.raw - b.raw)
       .slice(0, n)
       .map(({ row, raw }, i) => {
         const out = {
-          rank:      i + 1,
-          country:   row.name,
-          code:      row.code,
-          score:     scoreFromRaw(raw).toFixed(1),
-          raw_score: raw.toFixed(4),   // client-side relative view within a group
+          rank:       i + 1,
+          country:    row.name,
+          code:       row.code,
+          score:      scoreFromRaw(raw).toFixed(1),
+          raw_score:  raw.toFixed(4),   // client-side relative view within a group
+          coverage:   coverage(row),
+          dimensions: DIMENSIONS.length,
         };
-        for (const d of DIMENSIONS) out[d] = Number(row[d]).toFixed(1);
+        for (const d of DIMENSIONS) out[d] = hasValue(row[d]) ? Number(row[d]).toFixed(1) : null;
         return out;
       });
 

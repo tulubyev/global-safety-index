@@ -24,11 +24,32 @@ export function normalizeWeights(weights: Weights): Record<keyof Weights, number
   return out;
 }
 
+/** A dimension carries a real measurement — including a measured 0. */
+export function hasValue(v: unknown): boolean {
+  return v !== null && v !== undefined && v !== '' && Number.isFinite(Number(v));
+}
+
+/** How many dimensions actually have data. */
+export function coverage(dims: Dims): number {
+  return KEYS.filter(k => hasValue(dims[k])).length;
+}
+
+export const DIMENSION_COUNT = KEYS.length;
+
+/**
+ * Weighted mean over the dimensions that have data. Null means "unknown",
+ * not zero: it is dropped and the remaining weights are renormalised.
+ */
 export function rawScore(dims: Dims, weights: Weights): number {
   const w = normalizeWeights(weights);
-  let raw = 0;
-  for (const k of KEYS) raw += w[k] * (Number(dims[k]) || 0);
-  return Math.min(100, Math.max(0, raw));
+  let sum = 0, wsum = 0;
+  for (const k of KEYS) {
+    if (!hasValue(dims[k])) continue;
+    sum  += w[k] * Number(dims[k]);
+    wsum += w[k];
+  }
+  if (wsum === 0) return 0;
+  return Math.min(100, Math.max(0, sum / wsum));
 }
 
 export function scoreFromRaw(raw: number): number {

@@ -36,21 +36,30 @@ test('conflictRateMap ranks a small country above a large one at equal death cou
 
 test('conflictRateMap drops countries with no usable population', () => {
   const out = conflictRateMap(
-    new Map([['A', 100], ['B', 100], ['C', 100]]),
-    new Map([['A', 1e6], ['B', 0]]),   // B is zero, C is absent
+    new Map([['A', 100], ['B', 100]]),
+    new Map([['A', 1e6], ['B', 0]]),   // B has no usable population
   );
   assert.deepStrictEqual([...out.keys()], ['A']);
 });
 
-test('blendMaps weights structural and event components over the union of keys', () => {
+test('a country absent from the conflict data scores a measured zero, not unknown', () => {
+  // UCDP covers the world: no entry means no recorded organized violence.
+  const out = conflictRateMap(new Map([['A', 500]]), new Map([['A', 1e6], ['PEACE', 1e6]]));
+  assert.strictEqual(out.get('PEACE'), 0);
+  assert.ok(out.has('PEACE'), 'must be present with 0, not omitted');
+  assert.ok(out.get('A') > 0);
+});
+
+test('blendMaps is anchored on the structural index, not the event feed', () => {
   const out = blendMaps(
     new Map([['A', 100], ['C', 50]]), 0.8,
     new Map([['A', 100], ['B', 50]]), 0.2,
   );
   assert.strictEqual(out.get('A'), 100);          // 80 + 20
-  assert.strictEqual(out.get('B'), 10);           // absent structurally -> 0 + 10
-  assert.strictEqual(out.get('C'), 40);           // 40 + 0
-  assert.strictEqual(out.size, 3);
+  assert.strictEqual(out.get('C'), 40);           // 40 + 0, no events this month
+  assert.strictEqual(out.has('B'), false,
+    'an event with no structural assessment cannot stand in for one');
+  assert.strictEqual(out.size, 2);
 });
 
 test('blendMaps never exceeds 100', () => {

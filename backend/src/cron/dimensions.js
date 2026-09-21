@@ -68,21 +68,31 @@ function wbToIso2Map(rows) {
  */
 function conflictRateMap(weighted, population) {
   const out = new Map();
-  let noPop = 0;
-  for (const [iso2, total] of weighted) {
-    const pop = population.get(iso2);
-    if (!pop || pop <= 0) { noPop++; continue; }
+  // Keyed on population, not on the conflict data: UCDP covers the whole world,
+  // so a country absent from it recorded no organized-violence deaths. That is
+  // a measured zero, not missing data. Countries with no population figure are
+  // the genuinely unknown ones and are left out entirely.
+  for (const [iso2, pop] of population) {
+    if (!pop || pop <= 0) continue;
+    const total = weighted.get(iso2) || 0;
     out.set(iso2, ((total / CONFLICT_DECAY_WINDOW) / pop) * 100000);
   }
-  if (noPop) console.warn(`[cron] ⚠️  conflict: ${noPop} countries dropped (no population data)`);
   return out;
 }
 
-/** a·structural + b·events, union of keys, missing side = 0 */
+/**
+ * a·structural + b·events.
+ *
+ * Keyed on the structural index, which is the backbone of the dimension: an
+ * event feed says nothing about a country it does not mention (no ongoing
+ * disaster this month is a zero, not a hazard assessment), whereas a country
+ * missing from INFORM has no hazard assessment at all and must stay unknown.
+ * A structural entry with no matching events counts the event side as 0.
+ */
 function blendMaps(structMap, wStruct, eventMap, wEvent) {
   const out = new Map();
-  for (const k of new Set([...structMap.keys(), ...eventMap.keys()])) {
-    const v = wStruct * (structMap.get(k) || 0) + wEvent * (eventMap.get(k) || 0);
+  for (const [k, structVal] of structMap) {
+    const v = wStruct * (structVal || 0) + wEvent * (eventMap.get(k) || 0);
     out.set(k, Math.min(100, v));
   }
   return out;
