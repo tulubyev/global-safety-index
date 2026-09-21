@@ -19,14 +19,15 @@
  * alongside the score so that is visible.
  */
 
-const DIMENSIONS = ['conflict', 'crime', 'disaster', 'food', 'seismic', 'pandemic'];
+const DIMENSIONS = ['conflict', 'crime', 'road', 'disaster', 'food', 'seismic', 'pandemic'];
 
 const DEFAULT_WEIGHTS = Object.freeze({
-  conflict: 0.25,
-  crime:    0.20,
-  disaster: 0.15,
-  food:     0.15,
-  seismic:  0.10,
+  conflict: 0.20,
+  crime:    0.18,
+  road:     0.12,
+  disaster: 0.14,
+  food:     0.12,
+  seismic:  0.09,
   pandemic: 0.15,
 });
 

@@ -21,9 +21,14 @@ const SOURCES = [
     url:  'https://reliefweb.int/disasters',
   },
   {
-    name: 'World Bank — Food Security',
-    desc: 'Prevalence of undernourishment (SN.ITK.DEFC.ZS), scaled against FAO severity bands',
-    url:  'https://data.worldbank.org/indicator/SN.ITK.DEFC.ZS',
+    name: 'FAO — Food Insecurity (FIES)',
+    desc: 'Moderate or severe food insecurity, SDG indicator 2.1.2; undernourishment used where FIES is unpublished',
+    url:  'https://data.worldbank.org/indicator/SN.ITK.MSFI.ZS',
+  },
+  {
+    name: 'WHO — Road Traffic Deaths',
+    desc: 'Road traffic fatalities per 100,000 people, Global Health Observatory',
+    url:  'https://www.who.int/data/gho/data/themes/road-safety',
   },
   {
     name: 'UNODC — Intentional Homicide',
@@ -98,10 +103,11 @@ export default function AboutModal({ onClose }: Props) {
           <p style={{ fontSize: 13, lineHeight: 1.7, color: '#4b5563', margin: '10px 0 0' }}>
             Whether you are planning international travel, conducting research, or making
             decisions that depend on regional security — our index lets you quickly evaluate
-            risk across six dimensions: <strong>armed conflict</strong>, <strong>violent
-            crime</strong>, <strong>natural disasters</strong>, <strong>food security</strong>,
-            <strong> seismic activity</strong>, and <strong>pandemic risk</strong>. Each dimension
-            can be weighted according to your own priorities using the sliders on the left panel.
+            risk across seven dimensions: <strong>armed conflict</strong>, <strong>violent
+            crime</strong>, <strong>road safety</strong>, <strong>natural disasters</strong>,
+            <strong> food security</strong>, <strong>seismic activity</strong>, and
+            <strong> pandemic risk</strong>. Each dimension can be weighted according to your
+            own priorities using the sliders on the left panel.
           </p>
         </section>
 
@@ -122,7 +128,7 @@ export default function AboutModal({ onClose }: Props) {
             Index Formula
           </h3>
           <p style={{ fontSize: 12, lineHeight: 1.6, color: '#4b5563', marginBottom: 10 }}>
-            The composite risk score is a weighted sum of six dimensions, each mapped to 0–100
+            The composite risk score is a weighted sum of seven dimensions, each mapped to 0–100
             against fixed real-world anchors rather than relative to the other countries.
             Default weights can be adjusted by the user:
           </p>
@@ -136,23 +142,25 @@ export default function AboutModal({ onClose }: Props) {
             <div style={{ color: '#64748b', marginBottom: 4, fontFamily: 'sans-serif', fontSize: 11 }}>Score (0–100)</div>
             <div>= <span style={{ color: '#dc2626' }}>w₁</span> × Conflict</div>
             <div>+ <span style={{ color: '#be123c' }}>w₂</span> × Violent Crime</div>
-            <div>+ <span style={{ color: '#ea580c' }}>w₃</span> × Disaster</div>
-            <div>+ <span style={{ color: '#ca8a04' }}>w₄</span> × Food Security</div>
-            <div>+ <span style={{ color: '#7c3aed' }}>w₅</span> × Seismic</div>
-            <div>+ <span style={{ color: '#0891b2' }}>w₆</span> × Pandemic Risk</div>
+            <div>+ <span style={{ color: '#c2410c' }}>w₃</span> × Road Safety</div>
+            <div>+ <span style={{ color: '#ea580c' }}>w₄</span> × Disaster</div>
+            <div>+ <span style={{ color: '#ca8a04' }}>w₅</span> × Food Security</div>
+            <div>+ <span style={{ color: '#7c3aed' }}>w₆</span> × Seismic</div>
+            <div>+ <span style={{ color: '#0891b2' }}>w₇</span> × Pandemic Risk</div>
             <div style={{ marginTop: 6, paddingTop: 6, borderTop: '1px solid #e2e8f0', color: '#64748b' }}>
-              w₁+…+w₆ = 100%, then score = √(sum / 100) × 100
+              w₁+…+w₇ = 100%, then score = √(sum / 100) × 100
             </div>
           </div>
 
           {/* Default weights table */}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
             {[
-              { icon: '⚔️', label: 'Armed Conflict',   w: '25%', color: '#dc2626', src: 'UCDP' },
-              { icon: '🔫', label: 'Violent Crime',     w: '20%', color: '#be123c', src: 'UNODC' },
-              { icon: '🌪️', label: 'Natural Disaster',  w: '15%', color: '#ea580c', src: 'INFORM, ReliefWeb' },
-              { icon: '🌾', label: 'Food Security',     w: '15%', color: '#ca8a04', src: 'World Bank' },
-              { icon: '🔴', label: 'Seismic Activity',  w: '10%', color: '#7c3aed', src: 'INFORM, USGS' },
+              { icon: '⚔️', label: 'Armed Conflict',   w: '20%', color: '#dc2626', src: 'UCDP' },
+              { icon: '🔫', label: 'Violent Crime',     w: '18%', color: '#be123c', src: 'UNODC' },
+              { icon: '🚗', label: 'Road Safety',       w: '12%', color: '#c2410c', src: 'WHO' },
+              { icon: '🌪️', label: 'Natural Disaster',  w: '14%', color: '#ea580c', src: 'INFORM, ReliefWeb' },
+              { icon: '🌾', label: 'Food Security',     w: '12%', color: '#ca8a04', src: 'FAO FIES' },
+              { icon: '🔴', label: 'Seismic Activity',  w: '9%',  color: '#7c3aed', src: 'INFORM, USGS' },
               { icon: '🦠', label: 'Pandemic Risk',     w: '15%', color: '#0891b2', src: 'INFORM, WHO, ReliefWeb' },
             ].map(d => (
               <div key={d.label} style={{
@@ -174,7 +182,8 @@ export default function AboutModal({ onClose }: Props) {
           <p style={{ fontSize: 11, color: '#94a3b8', marginTop: 10, lineHeight: 1.5 }}>
             Scores are absolute: a country's value does not change when other countries
             do, so rankings stay comparable over time. Conflict and crime are measured
-            per 100,000 people, not as raw counts.
+            per 100,000 people, not as raw counts. Dimensions without data are excluded
+            and the remaining weights rescaled — never counted as zero.
             The formula and weights are open for public discussion — contact us if you
             have suggestions for improving the methodology.
           </p>

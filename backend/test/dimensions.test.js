@@ -66,3 +66,28 @@ test('blendMaps never exceeds 100', () => {
   const out = blendMaps(new Map([['A', 100]]), 1.0, new Map([['A', 100]]), 1.0);
   assert.strictEqual(out.get('A'), 100);
 });
+
+const { foodMap, FOOD_FIES_ANCHORS, FOOD_DEFC_ANCHORS } = require('../src/cron/dimensions');
+const { anchoredScale } = require('../src/parsers/scale');
+
+test('foodMap prefers FIES and falls back to undernourishment', () => {
+  const { map, via } = foodMap(
+    new Map([['DE', 4.1], ['NO', 7.8]]),          // FIES
+    new Map([['DE', 2.5], ['IN', 12.0]]),         // undernourishment
+    anchoredScale,
+  );
+  assert.strictEqual(via.get('DE'), 'fies', 'FIES must win where both exist');
+  assert.strictEqual(via.get('NO'), 'fies');
+  assert.strictEqual(via.get('IN'), 'undernourishment', 'fallback covers what FIES misses');
+  assert.strictEqual(map.size, 3);
+});
+
+test('FIES separates countries that undernourishment cannot', () => {
+  // Germany, Norway, USA and Russia all sit on the 2.5% undernourishment floor
+  const floor = [2.5, 2.5, 2.5, 2.5].map(v => anchoredScale(v, FOOD_DEFC_ANCHORS));
+  assert.deepStrictEqual(floor, [0, 0, 0, 0], 'the censored indicator collapses them to one value');
+
+  const fies = [4.1, 7.8, 10.3, 2.8].map(v => anchoredScale(v, FOOD_FIES_ANCHORS));
+  assert.strictEqual(new Set(fies).size, 4, 'FIES gives each of them a distinct value');
+  assert.ok(fies.every(v => v >= 0 && v <= 100));
+});

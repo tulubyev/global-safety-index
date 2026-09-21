@@ -3,17 +3,21 @@
  * World Bank Open Data — public API, no token required.
  *
  * Indicators used:
- *   SN.ITK.DEFC.ZS  prevalence of undernourishment (% of population)
+ *   SN.ITK.MSFI.ZS  moderate or severe food insecurity, % (FAO FIES, SDG 2.1.2)
+ *   SN.ITK.DEFC.ZS  prevalence of undernourishment, % (fallback for MSFI)
  *   SP.POP.TOTL     total population
  *   VC.IHR.PSRC.P5  intentional homicides per 100,000 people (UNODC data)
+ *   SH.STA.TRAF.P5  road traffic deaths per 100,000 people (WHO GHO data)
  */
 
 const https = require('https');
 
 const INDICATORS = {
-  food:       'SN.ITK.DEFC.ZS',
-  population: 'SP.POP.TOTL',
-  homicide:   'VC.IHR.PSRC.P5',
+  foodInsecurity:   'SN.ITK.MSFI.ZS',
+  undernourishment: 'SN.ITK.DEFC.ZS',
+  population:       'SP.POP.TOTL',
+  homicide:         'VC.IHR.PSRC.P5',
+  roadDeaths:       'SH.STA.TRAF.P5',
 };
 
 function fetchJson(url) {
@@ -66,8 +70,16 @@ async function fetchIndicator(indicator, mrv = 1) {
   return [...best.values()];
 }
 
-/** Prevalence of undernourishment, % of population. */
-const fetchFoodData = () => fetchIndicator(INDICATORS.food, 1);
+/**
+ * Moderate or severe food insecurity, % of population (FAO FIES).
+ * Preferred over undernourishment: the latter is censored at 2.5 %, so every
+ * developed country reports the same floor value and the dimension cannot
+ * distinguish them. Published as a 3-year rolling average, irregularly.
+ */
+const fetchFoodInsecurity = () => fetchIndicator(INDICATORS.foodInsecurity, 8);
+
+/** Prevalence of undernourishment, % — fallback where FIES is unavailable. */
+const fetchUndernourishment = () => fetchIndicator(INDICATORS.undernourishment, 4);
 
 /** Total population — denominator for per-capita rates. */
 const fetchPopulation = () => fetchIndicator(INDICATORS.population, 2);
@@ -75,10 +87,15 @@ const fetchPopulation = () => fetchIndicator(INDICATORS.population, 2);
 /** Intentional homicides per 100,000 (UNODC via World Bank); reported irregularly. */
 const fetchHomicideRate = () => fetchIndicator(INDICATORS.homicide, 8);
 
+/** Road traffic deaths per 100,000 (WHO GHO via World Bank). */
+const fetchRoadDeaths = () => fetchIndicator(INDICATORS.roadDeaths, 8);
+
 module.exports = {
   INDICATORS,
   fetchIndicator,
-  fetchFoodData,
+  fetchFoodInsecurity,
+  fetchUndernourishment,
   fetchPopulation,
   fetchHomicideRate,
+  fetchRoadDeaths,
 };

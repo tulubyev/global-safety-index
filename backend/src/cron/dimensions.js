@@ -35,9 +35,17 @@ const CONFLICT_ANCHORS = [[0.01, 0], [0.1, 25], [1, 50], [10, 75], [100, 100]];
 // Europe sits near 1, the global average near 6, the worst countries near 50.
 const CRIME_ANCHORS = [[0.5, 0], [1, 15], [3, 35], [6, 50], [12, 70], [25, 85], [50, 100]];
 
-// Prevalence of undernourishment, % of population — FAO severity bands
+// Road traffic deaths per 100k per year (WHO). The spread is narrow enough
+// for linear anchors: best countries ≈2, world median ≈16, worst ≈45.
+const ROAD_ANCHORS = [[2, 0], [5, 20], [10, 40], [18, 60], [27, 80], [45, 100]];
+
+// Moderate or severe food insecurity, % of population (FAO FIES).
+const FOOD_FIES_ANCHORS = [[2, 0], [5, 15], [10, 30], [25, 55], [50, 80], [80, 100]];
+
+// Prevalence of undernourishment, % — fallback scale, FAO severity bands
 // (<2.5 % very low, 5–15 % moderate, 15–25 % high, >25 % very high).
-const FOOD_ANCHORS = [[2.5, 0], [5, 20], [15, 50], [25, 75], [40, 100]];
+// Censored at 2.5 %, so it cannot separate countries below that.
+const FOOD_DEFC_ANCHORS = [[2.5, 0], [5, 20], [15, 50], [25, 75], [40, 100]];
 
 // ReliefWeb: Σ (type weight × time decay) over ongoing disasters.
 // ≈1 means one fresh average-severity disaster.
@@ -98,10 +106,37 @@ function blendMaps(structMap, wStruct, eventMap, wEvent) {
   return out;
 }
 
+/**
+ * Food dimension: FIES where it exists, undernourishment elsewhere.
+ *
+ * FIES measures how many people cannot reliably access enough food and spans
+ * the whole range (Germany 4 %, Norway 8 %, Yemen 73 %). Undernourishment is
+ * censored at 2.5 %, which collapses every developed country onto one value,
+ * but it covers ~35 countries FIES misses, including India and Sudan.
+ *
+ * The two scales are not identical, so a country scored via the fallback is
+ * only roughly comparable to one scored via FIES; `source` says which was used.
+ */
+function foodMap(fies, undernourishment, scaleFn) {
+  const out = new Map();
+  const via = new Map();
+  for (const [iso2, v] of fies) {
+    out.set(iso2, scaleFn(v, FOOD_FIES_ANCHORS));
+    via.set(iso2, 'fies');
+  }
+  for (const [iso2, v] of undernourishment) {
+    if (out.has(iso2)) continue;
+    out.set(iso2, scaleFn(v, FOOD_DEFC_ANCHORS));
+    via.set(iso2, 'undernourishment');
+  }
+  return { map: out, via };
+}
+
 module.exports = {
   DISASTER_STRUCT_W, DISASTER_EVENT_W, SEISMIC_STRUCT_W, SEISMIC_EVENT_W,
   CONFLICT_HALF_LIFE_YEARS, CONFLICT_DECAY_WINDOW,
-  CONFLICT_ANCHORS, CRIME_ANCHORS, FOOD_ANCHORS,
+  CONFLICT_ANCHORS, CRIME_ANCHORS, ROAD_ANCHORS,
+  FOOD_FIES_ANCHORS, FOOD_DEFC_ANCHORS,
   DISASTER_EVENT_ANCHORS, SEISMIC_EVENT_ANCHORS,
-  wbToIso2Map, conflictRateMap, blendMaps,
+  wbToIso2Map, conflictRateMap, blendMaps, foodMap,
 };

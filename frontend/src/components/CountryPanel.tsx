@@ -21,6 +21,7 @@ interface CountryData {
   name:     string;
   conflict: Dim;
   crime:    Dim;
+  road:     Dim;
   disaster: Dim;
   food:     Dim;
   seismic:  Dim;
@@ -108,6 +109,7 @@ export default function CountryPanel({ countryCode, weights, onClose }: Props) {
           name:     p.name,
           conflict: toDim(p.conflict),
           crime:    toDim(p.crime),
+          road:     toDim(p.road),
           disaster: toDim(p.disaster),
           food:     toDim(p.food),
           seismic:  toDim(p.seismic),
@@ -126,6 +128,7 @@ export default function CountryPanel({ countryCode, weights, onClose }: Props) {
     date:     new Date(d.date).getFullYear(),
     conflict: Number(d.conflict) || 0,
     crime:    Number(d.crime)    || 0,
+    road:     Number(d.road)     || 0,
     disaster: Number(d.disaster) || 0,
     food:     Number(d.food)     || 0,
     seismic:  Number(d.seismic)  || 0,

@@ -1,6 +1,7 @@
 export interface Weights {
   conflict: number;
   crime:    number;
+  road:     number;
   disaster: number;
   food:     number;
   seismic:  number;
@@ -8,11 +9,12 @@ export interface Weights {
 }
 
 export const DEFAULT_WEIGHTS: Weights = {
-  conflict: 25,
-  crime:    20,
-  disaster: 15,
-  food:     15,
-  seismic:  10,
+  conflict: 20,
+  crime:    18,
+  road:     12,
+  disaster: 14,
+  food:     12,
+  seismic:  9,
   pandemic: 15,
 };
 
@@ -38,6 +40,13 @@ export const WEIGHT_DIMS: {
     desc:  'Homicide rate per 100k (UNODC)',
   },
   {
+    key:   'road',
+    label: 'Road Safety',
+    icon:  '🚗',
+    color: '#c2410c',
+    desc:  'Traffic deaths per 100k (WHO)',
+  },
+  {
     key:   'disaster',
     label: 'Natural Disaster',
     icon:  '🌪️',
@@ -49,7 +58,7 @@ export const WEIGHT_DIMS: {
     label: 'Food Security',
     icon:  '🌾',
     color: '#ca8a04',
-    desc:  'Undernourishment (World Bank)',
+    desc:  'Food insecurity, FIES (FAO)',
   },
   {
     key:   'seismic',
