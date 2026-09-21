@@ -41,8 +41,11 @@ db/migrations/ SQL-миграции, применяются вручную по 
 
 **Шкалы абсолютные.** Перевод величин в 0–100 идёт через фиксированные опорные
 точки в `backend/src/parsers/scale.js`, не через min-max: балл страны не должен
-зависеть от того, кто ещё попал в выборку. Разовые скрипты в
-`backend/src/scripts/` остались на min-max — запускать их не нужно.
+зависеть от того, кто ещё попал в выборку.
+
+**Риск-данные пишет только конвейер.** В `backend/src/scripts/` остался лишь
+`importCountries.js` для первичного наполнения таблицы стран — см.
+[scripts/README](backend/src/scripts/README.md).
 
 **Добавить измерение:** миграция с колонкой, запись в `DIMENSIONS`
 (`scoreService.js`), источник в конвейере, пункт в `WEIGHT_DIMS`
@@ -58,6 +61,15 @@ docker compose up -d            # postgres + redis
 cd backend  && npm ci && npm run dev
 cd frontend && npm ci && npm run dev
 ```
+
+Тесты (чистые функции: шкалы, формула, резолверы стран, CSV-ридер):
+
+```bash
+cd backend && npm test
+```
+
+Первичное наполнение БД: миграции → `node src/scripts/importCountries.js` →
+запуск конвейера.
 
 Миграции применяются по порядку:
 

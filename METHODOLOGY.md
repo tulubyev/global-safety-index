@@ -267,8 +267,13 @@ docker exec safety-api node -e "require('./src/cron/weeklyUpdate').runWeeklyUpda
 | ReliefWeb | disaster, pandemic | по событиям | **нужен `RELIEFWEB_APPNAME`** |
 | ACLED | conflict (резерв) | — | Cloudflare блокирует серверные IP |
 
-Парсеры `gtdParser.js`, `gdeltParser.js`, `wriParser.js`, `gfsiParser.js`
-присутствуют в репозитории, но **не подключены** к конвейеру.
+Парсеры `gtdParser.js` и `gdeltParser.js` присутствуют в репозитории, но
+**не подключены** к конвейеру.
+
+Данные о рисках пишет **только** конвейер. Скриптов «импорт одного источника»
+больше нет: они масштабировали значения min-max и рассогласовывали таблицу,
+а `seedMockRisks.js` писал выдуманные числа. Остался только
+`scripts/importCountries.js` — первичное наполнение таблицы стран.
 
 ---
 
@@ -288,9 +293,8 @@ docker exec safety-api node -e "require('./src/cron/weeklyUpdate').runWeeklyUpda
 6. **Остаются неучтёнными:** ДТП (WHO), travel advisories, качество
    здравоохранения (GHS Index), верховенство права (WGI).
 7. **Территории.** Исключены из рейтинга списком, а не по качеству данных.
-8. **Разовые скрипты `backend/src/scripts/import*.js` всё ещё используют
-   min-max** и пишут в ту же таблицу. Запускать их не следует — данные
-   разойдутся с конвейером.
+8. **Парсеры `gtdParser.js` и `gdeltParser.js`** лежат в репозитории
+   неподключёнными — они ждут своей очереди в плане развития.
 
 ---
 
@@ -299,7 +303,6 @@ docker exec safety-api node -e "require('./src/cron/weeklyUpdate').runWeeklyUpda
 - Подключить GTD (терроризм) к conflict.
 - ДТП как компонент (WHO road traffic deaths per 100k) — для путешественника
   это статистически более вероятная причина смерти, чем преступность.
-- Удалить или починить легаси-скрипты `import*.js`, пишущие min-max.
 - Калибровать якоря по историческому распределению, а не на глаз.
 - Travel advisories как отдельный бейдж на карте, вне формулы.
 - Показывать покрытие источников в карточке страны («3 из 5 источников»).
