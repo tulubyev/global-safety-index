@@ -91,3 +91,26 @@ test('FIES separates countries that undernourishment cannot', () => {
   assert.strictEqual(new Set(fies).size, 4, 'FIES gives each of them a distinct value');
   assert.ok(fies.every(v => v >= 0 && v <= 100));
 });
+
+const { CRIME_ANCHORS } = require('../src/cron/dimensions');
+const { logAnchoredScale } = require('../src/parsers/scale');
+
+test('crime scale separates the safest countries instead of flattening them', () => {
+  // Real homicide rates per 100k
+  const rates = { singapore: 0.16, japan: 0.23, norway: 0.5, germany: 0.8, uk: 1.0 };
+  const s = Object.fromEntries(
+    Object.entries(rates).map(([k, v]) => [k, logAnchoredScale(v, CRIME_ANCHORS)]));
+
+  assert.ok(s.japan < s.norway, 'Japan must score below Norway');
+  assert.ok(s.norway < s.germany && s.germany < s.uk, 'the low end must stay ordered');
+  assert.ok(s.uk - s.japan > 15, 'the safest group must span a usable range');
+});
+
+test('crime scale keeps its shape across the full range', () => {
+  const pts = [0.16, 0.5, 1, 6.3, 22, 44, 80].map(v => logAnchoredScale(v, CRIME_ANCHORS));
+  for (let i = 1; i < pts.length; i++) assert.ok(pts[i] > pts[i - 1] || pts[i] === 100);
+  assert.strictEqual(logAnchoredScale(0.16, CRIME_ANCHORS), 0);
+  assert.strictEqual(logAnchoredScale(80, CRIME_ANCHORS), 100);
+  const usa = logAnchoredScale(6.3, CRIME_ANCHORS);
+  assert.ok(usa > 50 && usa < 58, `USA should land near the middle, got ${usa}`);
+});

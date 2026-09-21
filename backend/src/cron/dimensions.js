@@ -33,7 +33,11 @@ const CONFLICT_ANCHORS = [[0.01, 0], [0.1, 25], [1, 50], [10, 75], [100, 100]];
 
 // Intentional homicides per 100k per year (UNODC via World Bank). Western
 // Europe sits near 1, the global average near 6, the worst countries near 50.
-const CRIME_ANCHORS = [[0.5, 0], [1, 15], [3, 35], [6, 50], [12, 70], [25, 85], [50, 100]];
+// The floor is 0.2 rather than 0.5 so the safest group stays distinguishable:
+// at 0.5 Japan, Singapore, Norway, Switzerland and Italy all collapsed to 0.
+const CRIME_ANCHORS = [
+  [0.2, 0], [0.5, 10], [1, 20], [3, 40], [6, 53], [12, 68], [25, 84], [50, 100],
+];
 
 // Road traffic deaths per 100k per year (WHO). The spread is narrow enough
 // for linear anchors: best countries ≈2, world median ≈16, worst ≈45.
