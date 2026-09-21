@@ -322,6 +322,7 @@ async function runWeeklyUpdate() {
   // Flush cache so map/top10 serve fresh data
   await Promise.allSettled([
     cacheService.del('map:all:v3'),
+    cacheService.del('meta:v1'),
     ...[5, 10, 15, 20, 25, 30, 35, 40, 45, 50].map(n => cacheService.del(`top10:${n}`)),
   ]);
 

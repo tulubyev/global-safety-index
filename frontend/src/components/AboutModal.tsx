@@ -180,13 +180,20 @@ export default function AboutModal({ onClose }: Props) {
           </div>
 
           <p style={{ fontSize: 11, color: '#94a3b8', marginTop: 10, lineHeight: 1.5 }}>
-            Scores are absolute: a country's value does not change when other countries
-            do, so rankings stay comparable over time. Conflict and crime are measured
-            per 100,000 people, not as raw counts. Dimensions without data are excluded
-            and the remaining weights rescaled — never counted as zero.
-            The formula and weights are open for public discussion — contact us if you
-            have suggestions for improving the methodology.
+            Scores are absolute: a country&apos;s value does not change when other countries
+            do, so rankings stay comparable over time. Conflict, crime and road deaths are
+            measured per 100,000 people, not as raw counts. Dimensions without data are
+            excluded and the remaining weights rescaled — never counted as zero.
           </p>
+          <a
+            href="/methodology"
+            style={{
+              display: 'inline-block', marginTop: 8, fontSize: 12,
+              fontWeight: 600, color: '#1d4ed8', textDecoration: 'none',
+            }}
+          >
+            Full methodology, sources and limitations →
+          </a>
         </section>
 
         {/* Data Sources */}

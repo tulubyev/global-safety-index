@@ -9,6 +9,7 @@ const customWeightsRoutes = require('./routes/customWeights');
 const trendsRoutes = require('./routes/trends');
 const alertsRoutes = require('./routes/alerts');
 const adminRoutes = require('./routes/admin');
+const metaRoutes = require('./routes/meta');
 
 const { scheduleWeeklyUpdate } = require('./cron/weeklyUpdate');
 
@@ -23,6 +24,7 @@ app.use('/api/custom-weights', customWeightsRoutes);
 app.use('/api/trends', trendsRoutes);
 app.use('/api/alerts', alertsRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/meta', metaRoutes);
 
 app.get('/health', (_req, res) => res.json({ status: 'ok' }));
 

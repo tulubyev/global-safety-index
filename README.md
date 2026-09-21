@@ -6,7 +6,9 @@
 Веса измерений настраиваются пользователем, карта и рейтинг пересчитываются мгновенно.
 
 **Продакшн:** https://worldsafetyindex.org
-**Методология:** [METHODOLOGY.md](METHODOLOGY.md)
+**Методология:** [METHODOLOGY.md](METHODOLOGY.md) — техническое описание;
+публичная версия на сайте: `/methodology` (страница берёт покрытие и дату
+пересчёта из `/api/meta`, а не из захардкоженного текста)
 
 ---
 
@@ -169,6 +171,7 @@ Traefik ходит в контейнер по docker-сети. `curl localhost:3
 | `GET` | `/api/trends/:code` | история измерений текущего поколения формулы |
 | `POST` | `/api/admin/run-update` | ручной запуск конвейера (Bearer `ADMIN_TOKEN`) |
 | `GET` | `/api/admin/status` | идёт ли пересчёт (Bearer `ADMIN_TOKEN`) |
+| `GET` | `/api/meta` | версия формулы, дата пересчёта, покрытие по измерениям |
 | `GET` | `/health` | health-check |
 
 Ручной пересчёт без захода в контейнер:
