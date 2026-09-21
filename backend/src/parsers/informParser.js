@@ -84,4 +84,36 @@ async function fetchInformRisk() {
   return results;
 }
 
-module.exports = { fetchInformRisk };
+const iso3to2 = require('./iso3to2');
+
+/**
+ * INFORM non-seismic natural hazards → Map<iso2, 0–100>.
+ * Mean of flood / cyclone / drought / tsunami (each 0–10) × 10.
+ * Earthquake is deliberately excluded here — it lives in the seismic
+ * dimension, otherwise it would be counted twice.
+ */
+function informNonSeismicMap(informData) {
+  const map = new Map();
+  for (const row of informData) {
+    const iso2 = iso3to2(row.iso3);
+    if (!iso2) continue;
+    const parts = [row.flood, row.cyclone, row.drought, row.tsunami].map(v => Number(v) || 0);
+    const mean  = parts.reduce((a, b) => a + b, 0) / parts.length;
+    map.set(iso2, mean * 10);
+  }
+  return map;
+}
+
+/** INFORM earthquake hazard (0–10) → Map<iso2, 0–100> */
+function informEarthquakeMap(informData) {
+  const map = new Map();
+  for (const row of informData) {
+    const iso2 = iso3to2(row.iso3);
+    if (!iso2) continue;
+    map.set(iso2, (Number(row.earthquake) || 0) * 10);
+  }
+  return map;
+}
+
+module.exports = { fetchInformRisk, informNonSeismicMap, informEarthquakeMap };
+

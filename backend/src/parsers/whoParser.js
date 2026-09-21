@@ -322,4 +322,4 @@ async function fetchPandemicRisk(informData, reliefwebEpi, nameToIso2) {
   return result;
 }
 
-module.exports = { fetchPandemicRisk };
+module.exports = { fetchPandemicRisk, buildResolver, extractCountriesFromTitle };

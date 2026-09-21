@@ -24,205 +24,29 @@ const cron = require('node-cron');
 
 const { fetchAcledConflict }        = require('../parsers/acledParser');
 const { fetchUcdpConflict }         = require('../parsers/ucdpParser');
-const { fetchInformRisk }           = require('../parsers/informParser');
+const { fetchInformRisk,
+        informNonSeismicMap,
+        informEarthquakeMap }       = require('../parsers/informParser');
 const { fetchFoodData,
         fetchPopulation,
         fetchHomicideRate }         = require('../parsers/worldBankParser');
-const { fetchUsgsSeismicRisk }      = require('../parsers/usgsParser');
+const { fetchUsgsSeismicRisk,
+        usgsToIso2Map }             = require('../parsers/usgsParser');
 const { fetchReliefwebDisasters,
         fetchReliefwebEpidemics }   = require('../parsers/reliefwebParser');
 const { fetchPandemicRisk }         = require('../parsers/whoParser');
 const iso3to2                       = require('../parsers/iso3to2');
 const { logAnchoredScale,
         anchoredScale, scaleMap }   = require('../parsers/scale');
+const {
+  DISASTER_STRUCT_W, DISASTER_EVENT_W, SEISMIC_STRUCT_W, SEISMIC_EVENT_W,
+  CONFLICT_ANCHORS, CRIME_ANCHORS, FOOD_ANCHORS,
+  DISASTER_EVENT_ANCHORS, SEISMIC_EVENT_ANCHORS,
+  wbToIso2Map, conflictRateMap, blendMaps,
+} = require('./dimensions');
 const { getDb }                     = require('../services/dbService');
 const cacheService                  = require('../services/cacheService');
 const { compositeScore }            = require('../services/scoreService');
-
-// Sub-weights inside a dimension (structural index vs. recent events)
-const DISASTER_STRUCT_W = 0.70;   // INFORM flood/cyclone/drought/tsunami
-const DISASTER_EVENT_W  = 0.30;   // ReliefWeb ongoing disasters
-const SEISMIC_STRUCT_W  = 0.80;   // INFORM earthquake hazard
-const SEISMIC_EVENT_W   = 0.20;   // USGS M4.5+ last 30 days (log energy)
-
-// ── Absolute scales ──────────────────────────────────────────────────────────
-// Every dimension maps a real quantity to 0–100 through fixed anchors, never
-// min-max: a score must mean the same thing regardless of which other
-// countries are in the dataset, and must stay comparable across runs.
-
-// Must match the half-life used by the conflict parsers. The decay-weighted
-// sum of a steady process converges to rate × H/ln2, so dividing by that
-// turns the weighted total back into an annual rate.
-const CONFLICT_HALF_LIFE_YEARS = 2;
-const CONFLICT_DECAY_WINDOW    = CONFLICT_HALF_LIFE_YEARS / Math.LN2;  // ≈ 2.89 years
-
-// Conflict deaths per 100k population per year (log scale: each order of
-// magnitude is a step). 1/100k/yr ≈ a country in sustained low-level conflict,
-// 100/100k/yr ≈ full-scale war.
-const CONFLICT_ANCHORS = [[0.01, 0], [0.1, 25], [1, 50], [10, 75], [100, 100]];
-
-// Intentional homicides per 100k per year (UNODC via World Bank). Western
-// Europe sits near 1, the global average near 6, the worst countries near 50.
-const CRIME_ANCHORS = [[0.5, 0], [1, 15], [3, 35], [6, 50], [12, 70], [25, 85], [50, 100]];
-
-// Prevalence of undernourishment, % of population — FAO severity bands
-// (<2.5 % very low, 5–15 % moderate, 15–25 % high, >25 % very high).
-const FOOD_ANCHORS = [[2.5, 0], [5, 20], [15, 50], [25, 75], [40, 100]];
-
-// ReliefWeb: Σ (type weight × time decay) over ongoing disasters.
-// ≈1 means one fresh average-severity disaster.
-const DISASTER_EVENT_ANCHORS = [[0.3, 0], [1, 30], [3, 60], [10, 100]];
-
-// USGS: log10 of summed seismic energy over 30 days. A single M4.5 is ≈6.75,
-// a single M7.5 ≈11.25, so the anchors are already in log space.
-const SEISMIC_EVENT_ANCHORS = [[6.5, 0], [8, 30], [9.5, 60], [11, 100]];
-
-// ── Helpers ──────────────────────────────────────────────────────────────────
-
-/**
- * USGS returns place name strings, not ISO codes.
- * Build a rough country-name → iso2 lookup from a known list.
- * Unmatched entries are dropped.
- */
-const PLACE_TO_ISO2 = {
-  'afghanistan': 'AF', 'albania': 'AL', 'algeria': 'DZ', 'argentina': 'AR',
-  'armenia': 'AM', 'australia': 'AU', 'austria': 'AT', 'azerbaijan': 'AZ',
-  'bolivia': 'BO', 'bosnia': 'BA', 'brazil': 'BR', 'bulgaria': 'BG',
-  'burma': 'MM', 'myanmar': 'MM', 'cambodia': 'KH', 'cameroon': 'CM',
-  'canada': 'CA', 'chile': 'CL', 'china': 'CN', 'colombia': 'CO',
-  'comoros': 'KM', 'congo': 'CD', 'costa rica': 'CR', 'croatia': 'HR',
-  'cuba': 'CU', 'cyprus': 'CY', 'czechia': 'CZ', 'czech republic': 'CZ',
-  'ecuador': 'EC', 'egypt': 'EG', 'el salvador': 'SV', 'eritrea': 'ER',
-  'ethiopia': 'ET', 'fiji': 'FJ', 'france': 'FR', 'georgia': 'GE',
-  'germany': 'DE', 'greece': 'GR', 'guatemala': 'GT', 'haiti': 'HT',
-  'honduras': 'HN', 'hungary': 'HU', 'iceland': 'IS', 'india': 'IN',
-  'indonesia': 'ID', 'iran': 'IR', 'iraq': 'IQ', 'israel': 'IL',
-  'italy': 'IT', 'jamaica': 'JM', 'japan': 'JP', 'jordan': 'JO',
-  'kazakhstan': 'KZ', 'kenya': 'KE', 'kyrgyzstan': 'KG', 'laos': 'LA',
-  'lebanon': 'LB', 'libya': 'LY', 'madagascar': 'MG', 'malaysia': 'MY',
-  'maldives': 'MV', 'mali': 'ML', 'mauritania': 'MR', 'mexico': 'MX',
-  'mongolia': 'MN', 'morocco': 'MA', 'mozambique': 'MZ', 'nepal': 'NP',
-  'new caledonia': 'NC', 'new zealand': 'NZ', 'nicaragua': 'NI',
-  'niger': 'NE', 'nigeria': 'NG', 'north korea': 'KP', 'norway': 'NO',
-  'oman': 'OM', 'pakistan': 'PK', 'panama': 'PA', 'papua new guinea': 'PG',
-  'peru': 'PE', 'philippines': 'PH', 'poland': 'PL', 'portugal': 'PT',
-  'puerto rico': 'PR', 'romania': 'RO', 'russia': 'RU', 'rwanda': 'RW',
-  'saudi arabia': 'SA', 'serbia': 'RS', 'solomon islands': 'SB',
-  'somalia': 'SO', 'south africa': 'ZA', 'south korea': 'KR',
-  'spain': 'ES', 'sri lanka': 'LK', 'sudan': 'SD', 'syria': 'SY',
-  'taiwan': 'TW', 'tajikistan': 'TJ', 'tanzania': 'TZ', 'thailand': 'TH',
-  'timor-leste': 'TL', 'tonga': 'TO', 'turkey': 'TR', 'türkiye': 'TR',
-  'turkmenistan': 'TM', 'uganda': 'UG', 'ukraine': 'UA',
-  'united states': 'US', 'usa': 'US', 'uzbekistan': 'UZ',
-  'vanuatu': 'VU', 'venezuela': 'VE', 'vietnam': 'VN', 'viet nam': 'VN',
-  'yemen': 'YE', 'zambia': 'ZM', 'zimbabwe': 'ZW',
-};
-
-// Longest names first + word boundaries, so "nigeria" never matches "niger",
-// "somalia" never matches "mali", "romania" never matches "oman".
-const PLACE_PATTERNS = Object.entries(PLACE_TO_ISO2)
-  .sort((a, b) => b[0].length - a[0].length)
-  .map(([key, iso2]) => ({
-    re:   new RegExp(`(^|[^a-z])${key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}([^a-z]|$)`, 'i'),
-    iso2,
-  }));
-
-function placeToIso2(placeName) {
-  const lower = placeName.toLowerCase().trim();
-  if (PLACE_TO_ISO2[lower]) return PLACE_TO_ISO2[lower];
-  for (const { re, iso2 } of PLACE_PATTERNS) {
-    if (re.test(lower)) return iso2;
-  }
-  return null;
-}
-
-/**
- * Convert USGS placeName → iso2 Map of log10(energy).
- * Energy is 10^(1.5·M): one M7 is ~5600× an M4.5, so summing raw energy lets
- * a single quake pin one country at 100 and everyone else at ~0. Log-scale
- * keeps the ordering but compresses the range to something comparable.
- */
-function usgsToIso2Map(usgsData) {
-  const energy = new Map();
-  for (const { placeName, energy: e } of usgsData) {
-    const iso2 = placeToIso2(placeName);
-    if (!iso2) continue;
-    energy.set(iso2, (energy.get(iso2) || 0) + e);
-  }
-  const out = new Map();
-  for (const [iso2, e] of energy) out.set(iso2, Math.log10(e));
-  return out;
-}
-
-/** Convert a World Bank indicator array → Map<iso2, value> */
-function wbToIso2Map(rows) {
-  const map = new Map();
-  for (const { code3, value } of rows) {
-    const iso2 = iso3to2(code3);
-    if (!iso2) continue;
-    map.set(iso2, value);
-  }
-  return map;
-}
-
-/**
- * Decay-weighted fatalities → deaths per 100k population per year.
- *
- * Without the population denominator a large country looks more dangerous
- * than a small one at the same level of violence, purely because more people
- * live there. Countries with no population figure are dropped rather than
- * scored on an absolute count.
- */
-function conflictRateMap(weighted, population) {
-  const out = new Map();
-  let noPop = 0;
-  for (const [iso2, total] of weighted) {
-    const pop = population.get(iso2);
-    if (!pop || pop <= 0) { noPop++; continue; }
-    out.set(iso2, ((total / CONFLICT_DECAY_WINDOW) / pop) * 100000);
-  }
-  if (noPop) console.warn(`[cron] ⚠️  conflict: ${noPop} countries dropped (no population data)`);
-  return out;
-}
-
-/**
- * INFORM non-seismic natural hazards → Map<iso2, 0–100>.
- * Mean of flood / cyclone / drought / tsunami (each 0–10) × 10.
- * Earthquake is deliberately excluded here — it lives in the seismic
- * dimension, otherwise it would be counted twice.
- */
-function informNonSeismicMap(informData) {
-  const map = new Map();
-  for (const row of informData) {
-    const iso2 = iso3to2(row.iso3);
-    if (!iso2) continue;
-    const parts = [row.flood, row.cyclone, row.drought, row.tsunami].map(v => Number(v) || 0);
-    const mean  = parts.reduce((a, b) => a + b, 0) / parts.length;
-    map.set(iso2, mean * 10);
-  }
-  return map;
-}
-
-/** INFORM earthquake hazard (0–10) → Map<iso2, 0–100> */
-function informEarthquakeMap(informData) {
-  const map = new Map();
-  for (const row of informData) {
-    const iso2 = iso3to2(row.iso3);
-    if (!iso2) continue;
-    map.set(iso2, (Number(row.earthquake) || 0) * 10);
-  }
-  return map;
-}
-
-/** a·structural + b·events, union of keys, missing side = 0 */
-function blendMaps(structMap, wStruct, eventMap, wEvent) {
-  const out = new Map();
-  for (const k of new Set([...structMap.keys(), ...eventMap.keys()])) {
-    const v = wStruct * (structMap.get(k) || 0) + wEvent * (eventMap.get(k) || 0);
-    out.set(k, Math.min(100, v));
-  }
-  return out;
-}
 
 // ── Main pipeline ─────────────────────────────────────────────────────────────
 

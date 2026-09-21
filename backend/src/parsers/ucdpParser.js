@@ -311,4 +311,4 @@ async function fetchUcdpConflict(resolveName) {
   return agg.totals;
 }
 
-module.exports = { fetchUcdpConflict };
+module.exports = { fetchUcdpConflict, csvRows };
