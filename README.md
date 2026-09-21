@@ -94,11 +94,13 @@ for f in db/migrations/*.sql; do psql "$DATABASE_URL" -f "$f"; done
 | `DATABASE_URL` | да | из контейнера — хост `172.28.0.1`, не публичный IP |
 | `REDIS_URL` | нет | без неё запросы идут напрямую в БД |
 | `RELIEFWEB_APPNAME` | для ReliefWeb | регистрация appname, ~1 рабочий день |
-| `ACLED_EMAIL`, `ACLED_PASSWORD` | нет | резервный источник конфликтов |
 | `ADMIN_TOKEN` | нет | включает `POST /api/admin/run-update`; 16+ символов, пусто = выключено |
 
-UCDP, INFORM, USGS, World Bank (включая данные UNODC по убийствам) и WHO
-ключей не требуют.
+UCDP, INFORM, USGS, World Bank (включая данные UNODC по убийствам и ВОЗ по ДТП)
+и WHO ключей не требуют.
+
+ACLED в проекте не используется: их условия на бесплатном уровне доступа
+запрещают публикацию производных данных на сайте — см. METHODOLOGY.md.
 
 ---
 

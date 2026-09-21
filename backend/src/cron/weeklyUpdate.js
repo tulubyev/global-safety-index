@@ -10,7 +10,7 @@
  *  5. Flush all relevant cache keys
  *
  * Dimensions and their sources:
- *  conflict  — UCDP GED + candidate events, deaths per 100k/yr (2-yr half-life); ACLED fallback
+ *  conflict  — UCDP GED + candidate events, deaths per 100k/yr (2-yr half-life)
  *  crime     — UNODC intentional homicide rate per 100k (via World Bank)
  *  road      — WHO road traffic deaths per 100k (via World Bank)
  *  disaster  — INFORM flood/cyclone/drought/tsunami (70%) + ReliefWeb ongoing disasters (30%)
@@ -23,7 +23,6 @@
 
 const cron = require('node-cron');
 
-const { fetchAcledConflict }        = require('../parsers/acledParser');
 const { fetchUcdpConflict }         = require('../parsers/ucdpParser');
 const { fetchInformRisk,
         informNonSeismicMap,
@@ -78,25 +77,20 @@ async function runWeeklyUpdate() {
   }
   const resolveName = (name) => nameToIso2.get(String(name || '').toLowerCase().trim()) || null;
 
-  // Conflict: UCDP GED (public CSV, always reachable) → ACLED (Cloudflare-
-  // challenged from datacenter IPs, kept as optional fallback) → carry forward.
+  // Conflict: UCDP GED only.
+  //
+  // ACLED was removed rather than kept as a fallback. Their access team
+  // confirmed in writing that API access needs a paid licence and that
+  // publishing derived data on this site "would be a violation of ACLED's
+  // Terms and Conditions" at the open access level. UCDP is CC BY 4.0, which
+  // permits exactly this use with attribution.
+  //
+  // If the pipeline cannot get conflict data it carries the previous values
+  // forward rather than writing zeros.
   async function fetchConflict() {
-    try {
-      const m = await fetchUcdpConflict(resolveName);
-      if (m.size) return { source: 'UCDP', map: m };
-      throw new Error('UCDP returned no countries');
-    } catch (err) {
-      console.error('[cron] ⚠️  UCDP failed:', err.message);
-    }
-    if (process.env.ACLED_EMAIL && process.env.ACLED_PASSWORD) {
-      try {
-        const m = await fetchAcledConflict(2020);
-        if (m.size) return { source: 'ACLED', map: m };
-      } catch (err) {
-        console.error('[cron] ⚠️  ACLED failed:', err.message);
-      }
-    }
-    throw new Error('no conflict source available');
+    const m = await fetchUcdpConflict(resolveName);
+    if (!m.size) throw new Error('UCDP returned no countries');
+    return { source: 'UCDP', map: m };
   }
 
   // Sources that don't depend on each other run in parallel
@@ -143,8 +137,10 @@ async function runWeeklyUpdate() {
   const usgs           = unwrap(usgsRaw,            'USGS',            []);
   const reliefDisaster = unwrap(reliefDisastersRaw, 'ReliefWeb',       new Map());
   const reliefEpis     = unwrap(reliefEpisRaw,      'ReliefWeb-Epi',   new Map());
-  const acled          = conflictSrc.map;
-  if (conflictSrc.source) console.log(`[cron] Conflict source: ${conflictSrc.source} (${acled.size} countries)`);
+  const conflictWeighted = conflictSrc.map;
+  if (conflictSrc.source) {
+    console.log(`[cron] Conflict source: ${conflictSrc.source} (${conflictWeighted.size} countries)`);
+  }
 
   // Nothing meaningful to compute without both structural (INFORM) and
   // conflict data — abort rather than write a row of zeros.
@@ -189,7 +185,7 @@ async function runWeeklyUpdate() {
   const population = wbToIso2Map(popRows);
 
   // Conflict: decay-weighted fatalities → deaths per 100k/year
-  const conflictRate = conflictRateMap(acled, population);
+  const conflictRate = conflictRateMap(conflictWeighted, population);
 
   // Disaster: INFORM flood/cyclone/drought/tsunami (structural, absolute 0–100)
   //         + ReliefWeb ongoing disasters (events)

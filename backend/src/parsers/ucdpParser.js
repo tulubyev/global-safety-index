@@ -14,8 +14,7 @@
  *      monthly files (skip months not yet published), fall back to the
  *      half-year bundles if a month is missing. Events deduped by id.
  *   3. Sum `best` fatalities per country with exponential decay,
- *      half-life 2 years from date_start. Same shape as the ACLED parser:
- *      Map<iso2, weightedFatalities>.
+ *      half-life 2 years from date_start. Returns Map<iso2, weightedFatalities>.
  *
  * Country resolution: Gleditsch-Ward `country_id` → ISO2 table below, then
  * `country` name against the resolver passed in by the cron (DB names).
