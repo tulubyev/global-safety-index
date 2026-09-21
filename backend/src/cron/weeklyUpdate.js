@@ -51,6 +51,7 @@ const { getDb }                     = require('../services/dbService');
 const cacheService                  = require('../services/cacheService');
 const { compositeScore, coverage,
         DIMENSIONS }                = require('../services/scoreService');
+const { PIPELINE_VERSION }          = require('../services/pipelineVersion');
 
 // ── Main pipeline ─────────────────────────────────────────────────────────────
 
@@ -295,13 +296,13 @@ async function runWeeklyUpdate() {
       await db.query(
         `INSERT INTO risks
            (country_code, measured_at, ${DIMENSIONS.join(', ')}, score, source)
-         VALUES ($1, $2, ${DIMENSIONS.map((_, i) => `$${i + 3}`).join(', ')}, $${DIMENSIONS.length + 3}, 'weekly-cron')
+         VALUES ($1, $2, ${DIMENSIONS.map((_, i) => `$${i + 3}`).join(', ')}, $${DIMENSIONS.length + 3}, $${DIMENSIONS.length + 4})
          ON CONFLICT (country_code, measured_at)
          DO UPDATE SET
            ${DIMENSIONS.map(d => `${d} = EXCLUDED.${d}`).join(',\n           ')},
            score    = EXCLUDED.score,
            source   = EXCLUDED.source`,
-        [r.code, today, ...DIMENSIONS.map(d => r[d]), r.score]
+        [r.code, today, ...DIMENSIONS.map(d => r[d]), r.score, PIPELINE_VERSION]
       );
       upserted++;
     } catch (err) {
@@ -330,11 +331,21 @@ async function runWeeklyUpdate() {
 }
 
 // ── Schedule: every Monday at 06:00 UTC ──────────────────────────────────────
-cron.schedule('0 6 * * 1', () => {
-  runWeeklyUpdate().catch(err => {
-    console.error('[cron] Weekly update crashed:', err);
-  });
-});
+//
+// Scheduling is an explicit call, not an import side effect: requiring this
+// module used to start the cron and keep the event loop alive, so anything
+// that only wanted `runWeeklyUpdate` — the admin route, a test — hung.
+let task = null;
 
-// Export for manual trigger via /api/admin/run-update (if needed)
-module.exports = { runWeeklyUpdate };
+function scheduleWeeklyUpdate() {
+  if (task) return task;
+  task = cron.schedule('0 6 * * 1', () => {
+    runWeeklyUpdate().catch(err => {
+      console.error('[cron] Weekly update crashed:', err);
+    });
+  });
+  console.log('[cron] Weekly update scheduled: Mondays 06:00 UTC');
+  return task;
+}
+
+module.exports = { runWeeklyUpdate, scheduleWeeklyUpdate };

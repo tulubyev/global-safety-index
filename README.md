@@ -93,7 +93,7 @@ for f in db/migrations/*.sql; do psql "$DATABASE_URL" -f "$f"; done
 | `REDIS_URL` | нет | без неё запросы идут напрямую в БД |
 | `RELIEFWEB_APPNAME` | для ReliefWeb | регистрация appname, ~1 рабочий день |
 | `ACLED_EMAIL`, `ACLED_PASSWORD` | нет | резервный источник конфликтов |
-| `ML_SERVICE_URL` | нет | прогноз в `/api/trends`, при отказе отдаётся только история |
+| `ADMIN_TOKEN` | нет | включает `POST /api/admin/run-update`; 16+ символов, пусто = выключено |
 
 UCDP, INFORM, USGS, World Bank (включая данные UNODC по убийствам) и WHO
 ключей не требуют.
@@ -166,5 +166,21 @@ Traefik ходит в контейнер по docker-сети. `curl localhost:3
 | `POST` | `/api/custom-weights` | рейтинг по пользовательским весам |
 | `GET` | `/api/top10?n=10` | рейтинг по весам по умолчанию |
 | `GET` | `/api/safety?lat=&lon=` | страна по координатам |
-| `GET` | `/api/trends/:code` | история измерений (+ прогноз, если поднят ML) |
+| `GET` | `/api/trends/:code` | история измерений текущего поколения формулы |
+| `POST` | `/api/admin/run-update` | ручной запуск конвейера (Bearer `ADMIN_TOKEN`) |
+| `GET` | `/api/admin/status` | идёт ли пересчёт (Bearer `ADMIN_TOKEN`) |
 | `GET` | `/health` | health-check |
+
+Ручной пересчёт без захода в контейнер:
+
+```bash
+curl -X POST https://worldsafetyindex.org/api/admin/run-update -H "Authorization: Bearer $ADMIN_TOKEN"
+```
+
+**Поколение формулы.** Строки в `risks` помечаются версией
+(`services/pipelineVersion.js`). Баллы разных поколений несопоставимы, поэтому
+`/api/trends` отдаёт только текущее — иначе на графике был бы виден скачок в
+момент смены методики, неотличимый от реального изменения в стране. Версию
+нужно поднимать при любом изменении шкалы или формулы.
+
+ML-сервис прогноза намеренно не поднят — [почему](ml/README.md).

@@ -8,8 +8,9 @@ const mapRoutes = require('./routes/map');
 const customWeightsRoutes = require('./routes/customWeights');
 const trendsRoutes = require('./routes/trends');
 const alertsRoutes = require('./routes/alerts');
+const adminRoutes = require('./routes/admin');
 
-require('./cron/weeklyUpdate');
+const { scheduleWeeklyUpdate } = require('./cron/weeklyUpdate');
 
 const app = express();
 app.use(cors());
@@ -21,8 +22,11 @@ app.use('/api/map', mapRoutes);
 app.use('/api/custom-weights', customWeightsRoutes);
 app.use('/api/trends', trendsRoutes);
 app.use('/api/alerts', alertsRoutes);
+app.use('/api/admin', adminRoutes);
 
 app.get('/health', (_req, res) => res.json({ status: 'ok' }));
+
+scheduleWeeklyUpdate();
 
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => console.log(`Backend listening on port ${PORT}`));
