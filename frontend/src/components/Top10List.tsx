@@ -92,9 +92,17 @@ export default function Top10List({ weights, onSelect }: Props) {
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '12px 0 16px' }}>
         <span style={{ fontSize: 12, color: '#6b7280', whiteSpace: 'nowrap' }}>Show:</span>
         <input
+          className="wsi-range"
           type="range" min={5} max={50} step={5} value={count}
+          aria-label="How many countries to list"
           onChange={e => setCount(Number(e.target.value))}
-          style={{ flex: 1, accentColor: '#6b7280', cursor: 'pointer' }}
+          style={{
+            flex: 1,
+            ['--wsi-color' as string]: '#6b7280',
+            ['--wsi-ring' as string]: '#6b728055',
+            ['--wsi-track' as string]:
+              `linear-gradient(to right, #6b7280 ${((count - 5) / 45) * 100}%, #e5e7eb ${((count - 5) / 45) * 100}%)`,
+          } as React.CSSProperties}
         />
         <span style={{ fontSize: 12, fontWeight: 700, color: '#374151', minWidth: 36, textAlign: 'right' }}>
           {count}

@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import 'leaflet/dist/leaflet.css';
+import './sliders.css';
 
 export const metadata: Metadata = {
   title: 'Global Safety Index',
