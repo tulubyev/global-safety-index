@@ -1,0 +1,28 @@
+name: Перенос из Replit
+description: Чек-лист переноса проекта из Replit в Claude Code + VPS
+title: "Перенос из Replit в Claude Code"
+labels: ["type:migration"]
+body:
+  - type: markdown
+    attributes:
+      value: Отмечайте пункты по ходу работы — прогресс виден на доске.
+  - type: checkboxes
+    id: steps
+    attributes:
+      label: Шаги
+      options:
+        - label: Код в GitHub, локальная копия в ~/Dropbox/DEV, remote без токенов в URL
+        - label: Секреты Replit перенесены в .env (в git не попадает), есть .env.example
+        - label: replit.md / .replit разобраны — нужное перенесено в CLAUDE.md
+        - label: Убраны зависимости от Replit (Replit DB, Auth, @replit/* пакеты, REPLIT_* переменные)
+        - label: Проект собирается локально (npm ci && npm run build)
+        - label: База данных создана на VPS (PostgreSQL 16), миграции применены
+        - label: Dockerfile / docker-compose.prod.yml, свободный порт из реестра VPS
+        - label: Traefik-роутинг и домен, HTTPS работает
+        - label: Запись в tulubyev/dev-control/projects.yml (status active, domain, vps)
+        - label: Запись в vps-server-infra/docs/Projects.md
+        - label: CI (сборка + проверка типов) в .github/workflows
+  - type: input
+    id: replit
+    attributes:
+      label: Ссылка на Replit

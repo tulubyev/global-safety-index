@@ -1,0 +1,37 @@
+name: Задача
+description: Новая функция, доработка или техническая задача
+labels: ["type:task"]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: Что сделать
+      description: Результат, который нужен. Понятно человеку и агенту без контекста.
+    validations:
+      required: true
+  - type: textarea
+    id: done
+    attributes:
+      label: Как проверить, что готово
+      description: Критерии приёмки — что открыть, что нажать, что должно получиться.
+      placeholder: |
+        - [ ] ...
+    validations:
+      required: true
+  - type: dropdown
+    id: priority
+    attributes:
+      label: Приоритет
+      description: Попадёт в поле Priority на доске
+      options: ["P2 — обычный", "P1 — на этой неделе", "P0 — горит", "P3 — когда-нибудь"]
+  - type: dropdown
+    id: executor
+    attributes:
+      label: Исполнитель
+      description: Попадёт в поле Executor на доске
+      options: ["human", "agent:claude", "agent:copilot"]
+  - type: textarea
+    id: context
+    attributes:
+      label: Контекст
+      description: Ссылки, скриншоты, файлы, связанные задачи.

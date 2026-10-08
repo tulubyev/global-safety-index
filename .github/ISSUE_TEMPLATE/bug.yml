@@ -1,0 +1,31 @@
+name: Ошибка
+description: Что-то сломалось или работает не так
+labels: ["type:bug"]
+body:
+  - type: input
+    id: where
+    attributes:
+      label: Где
+      description: URL страницы, экран приложения или команда
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Как воспроизвести
+      placeholder: |
+        1. ...
+        2. ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Что ожидалось и что произошло
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Логи, скриншоты
+      render: text
