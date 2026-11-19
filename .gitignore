@@ -36,3 +36,6 @@ venv/
 # IDE
 .vscode/
 .idea/
+
+# Local recovery audit (server inventory and backup paths)
+/RECOVERY-2026-11-19.md

@@ -8,9 +8,9 @@
 |---|---|
 | GitHub | https://github.com/tulubyev/global-safety-index |
 | Локально | `~/Dropbox/DEV/safety` |
-| VPS | `/var/www/safety` (90.156.168.149) |
+| VPS | Dhost, `/var/www/safety`; актуальная инструкция — `DEPLOY.md` |
 | Прод | worldsafetyindex.org |
-| Стек | Next.js 14 + Express + Python ML, Docker |
+| Стек | Next.js 14 + Express + общий PostgreSQL 16/PostGIS, Docker; ML не запущен |
 
 ## Как ведётся работа
 
@@ -28,4 +28,6 @@
 
 ## Команды
 
-<!-- заполнить: установка, запуск, сборка, тесты, деплой -->
+Тесты: `cd backend && npm test`.
+Деплой: `docker compose -p safety -f docker-compose.prod.yml -f docker-compose.dhost.yml up -d --build --wait`.
+Подробности, восстановление и бэкапы — `DEPLOY.md`.
