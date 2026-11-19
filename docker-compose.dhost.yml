@@ -1,0 +1,9 @@
+services:
+  safety-api:
+    networks:
+      - dhost-database
+
+networks:
+  dhost-database:
+    external: true
+    name: dhost-database

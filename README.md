@@ -106,6 +106,10 @@ ACLED в проекте не используется: их условия на 
 
 ## Деплой
 
+**Dhost (актуальное размещение):** используйте оба Compose-файла и подключение
+к общему PostgreSQL/PostGIS — порядок в [DEPLOY.md](DEPLOY.md).
+Команды ниже описывают прежнее размещение без Dhost override.
+
 ```bash
 cd /var/www/safety
 git pull origin main
